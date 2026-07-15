@@ -8,7 +8,7 @@ const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-jakart
 const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfair" });
 
 export const metadata: Metadata = {
-  title: "Individual — Practice Management for Freelance Psychologists",
+  title: "Mindesk — Practice Management for Freelance Psychologists",
   description: "A booking page, client records, session notes, invoicing, and analytics for independent psychologists.",
   keywords: ["appointment", "booking", "psychologist", "therapy", "practice management"],
 };

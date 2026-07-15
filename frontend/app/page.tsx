@@ -32,7 +32,7 @@ export default function Home() {
           {/* --- Navigation --- */}
           <nav className="flex items-center justify-between px-6 py-6 md:px-12 w-full animate-fade-in-up">
             <div className="flex flex-col leading-tight">
-              <span className="text-2xl font-bold tracking-wide text-[#1A2B34]">Individual</span>
+              <span className="text-2xl font-bold tracking-wide text-[#1A2B34]">Mindesk</span>
             </div>
 
             <div className="flex items-center gap-4">
@@ -128,7 +128,7 @@ export default function Home() {
         <div className="space-y-4">
           {[
             {
-              q: "Who is Individual for?",
+              q: "Who is Mindesk for?",
               a: "Freelance and independent psychologists who run their own practice without a clinic, staff, or admin team. Each account is a single practitioner — there's no multi-user or staff management, by design.",
             },
             {
@@ -180,7 +180,7 @@ export default function Home() {
             Create your free account
           </Link>
           <p className="mt-16 text-sm text-[#9A9E9A]">
-            &copy; {new Date().getFullYear()} Individual. All rights reserved.
+            &copy; {new Date().getFullYear()} Mindesk. All rights reserved.
           </p>
         </ScrollReveal>
       </footer>
