@@ -1,0 +1,38 @@
+# Maven build output (the JAR lives here — don't copy the whole folder into Docker)
+target/
+
+# IDE project files
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Maven wrapper cache
+.mvn/repository
+
+# Logs
+*.log
+logs/
+
+# Test output
+surefire-reports/
+
+# Docker files themselves (no need to recurse)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment file with real secrets — never bake into the image
+.env

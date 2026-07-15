@@ -1,0 +1,95 @@
+version: '3.8'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Individual — standalone multi-tenant freelancer stack
+#
+# Fully self-contained: local Postgres, no shared services with the original
+# psychologist-erp project. Uses different container names, volume name, and
+# host ports so both stacks can run on the same machine at the same time.
+#
+# Usage:
+#   Start everything:   docker compose up --build -d
+#   Stop everything:    docker compose down
+#   Wipe DB volume:     docker compose down -v
+#   View logs:          docker compose logs -f individual-backend
+#   DB shell:           docker compose exec individual-db psql -U individual -d individual
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  individual-db:
+    image: postgres:16-alpine
+    container_name: individual-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: individual
+      POSTGRES_USER: individual
+      POSTGRES_PASSWORD: individual_dev_pw
+    ports:
+      - "5433:5432"
+    volumes:
+      - individual_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U individual -d individual"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  individual-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: individual-backend
+    restart: unless-stopped
+    depends_on:
+      individual-db:
+        condition: service_healthy
+    ports:
+      - "8087:8087"
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://individual-db:5432/individual"
+      SPRING_DATASOURCE_USERNAME: "individual"
+      SPRING_DATASOURCE_PASSWORD: "individual_dev_pw"
+      # Dev-only placeholder — generate a real secret before any real deployment,
+      # e.g. `openssl rand -base64 64`, and pass it in via a git-ignored .env file.
+      JWT_SECRET: "CHANGE_ME_generate_a_real_256bit_secret_before_deploying"
+      JWT_EXPIRATION: "28800000"
+      APP_BASE_URL: "http://localhost:3001"
+      # Optional integrations — leave blank to run without them; the app
+      # boots and the core booking/dashboard flows work either way.
+      RESEND_API_KEY: ""
+      MAIL_USERNAME: ""
+      MAIL_PASSWORD: ""
+      TWILIO_ACCOUNT_SID: ""
+      TWILIO_AUTH_TOKEN: ""
+      TWILIO_PHONE_NUMBER: ""
+      TWILIO_WHATSAPP_NUMBER: ""
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_BOT_USERNAME: ""
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      GOOGLE_REDIRECT_URI: "http://localhost:8087/api/v1/calendar/callback"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8087/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  individual-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:8087/api/v1"
+    container_name: individual-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      BACKEND_URL: "http://individual-backend:8087"
+    depends_on:
+      - individual-backend
+
+volumes:
+  individual_pgdata:

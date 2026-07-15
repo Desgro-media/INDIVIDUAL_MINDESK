@@ -1,0 +1,1761 @@
+﻿"use client";
+
+import React, { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { useParams, useRouter } from "next/navigation";
+import {
+  ArrowLeft, Calendar, Clock, CheckCircle2,
+  XCircle, Hourglass, FileText, ChevronDown, ChevronUp,
+  Search, ArrowDownUp, AlertCircle, Phone, Mail, Check,
+  Download, Plus, BrainCircuit, TrendingUp, Star,
+  Lock, Pencil, Save, Trash2, DollarSign, Smile, X, RefreshCw,
+} from "lucide-react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from "recharts";
+import {
+  startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
+  format as dfmt, isSameDay, isToday, isAfter, isSameMonth, addMonths, subMonths, parseISO,
+} from "date-fns";
+import api from "../../../../lib/api";
+import { CHART, useThemeMode, SeriesTooltip } from "../../../../lib/chartTheme";
+import { SpotlightDiv } from "../../../../components/Spotlight";
+
+// ── Custom dropdown (dark-mode safe — avoids native <select> OS rendering) ───
+function CalDrop({ label, options, onSelect }: {
+  label: string;
+  options: { value: string | number; label: string; disabled?: boolean }[];
+  onSelect: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  // close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)", background: "transparent", border: "none",
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 3, padding: "2px 4px", borderRadius: 6 }}>
+        {label}
+        <span style={{ fontSize: 9, opacity: 0.6 }}>▾</span>
+      </button>
+      {open && (
+        <div className="soft-card" style={{
+          position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
+          zIndex: 200, borderRadius: 12, padding: "6px 0",
+          maxHeight: 200, overflowY: "auto", minWidth: 120,
+        }}>
+          {options.map(opt => (
+            <button key={opt.value} type="button" disabled={opt.disabled}
+              onClick={() => { if (!opt.disabled) { onSelect(String(opt.value)); setOpen(false); } }}
+              style={{
+                display: "block", width: "100%", textAlign: "center",
+                padding: "8px 16px", border: "none", background: String(opt.value) === label ? "var(--accent-surface)" : "transparent",
+                color: opt.disabled ? "var(--text-3)" : String(opt.value) === label ? "var(--accent)" : "var(--text-1)",
+                fontSize: 12, fontWeight: String(opt.value) === label ? 700 : 400,
+                cursor: opt.disabled ? "default" : "pointer",
+              }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Mini Calendar ─────────────────────────────────────────────────────────────
+function MiniCalendar({ value, onChange, maxDate }: {
+  value: string;
+  onChange: (iso: string) => void;
+  maxDate?: Date;
+}) {
+  const cap   = maxDate ?? new Date();
+  const today = new Date();
+
+  // Always start on a valid, non-future month regardless of whatever is in value
+  const [view, setView] = useState<Date>(() => {
+    if (!value) return today;
+    try {
+      const d = parseISO(value);
+      return isAfter(d, cap) ? cap : d;
+    } catch { return today; }
+  });
+
+  const selected = value ? (() => { try { return parseISO(value); } catch { return null; } })() : null;
+
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const maxYear = cap.getFullYear();
+  const minYear = maxYear - 60;
+  const years   = Array.from({ length: maxYear - minYear + 1 }, (_, i) => maxYear - i);
+
+  const setMonth = (m: number) => setView(v => new Date(v.getFullYear(), m, 1));
+  const setYear  = (y: number) => setView(v => {
+    const m = y === maxYear && v.getMonth() > cap.getMonth() ? cap.getMonth() : v.getMonth();
+    return new Date(y, m, 1);
+  });
+
+  const canNext = !isSameMonth(view, cap) && isAfter(cap, endOfMonth(view));
+
+  const days = eachDayOfInterval({
+    start: startOfWeek(startOfMonth(view), { weekStartsOn: 1 }),
+    end:   endOfWeek(endOfMonth(view),     { weekStartsOn: 1 }),
+  });
+
+  return (
+    <div className="soft-card-2" style={{ borderRadius: 16, padding: 16, userSelect: "none" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 4 }}>
+        <button type="button" onClick={() => setView(v => subMonths(v, 1))}
+          style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "transparent", cursor: "pointer", color: "var(--text-2)", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          ‹
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <CalDrop
+            label={MONTHS[view.getMonth()]}
+            options={MONTHS.map((m, i) => ({
+              value: i, label: m,
+              disabled: view.getFullYear() === maxYear && i > cap.getMonth(),
+            }))}
+            onSelect={v => setMonth(Number(v))}
+          />
+          <CalDrop
+            label={String(view.getFullYear())}
+            options={years.map(y => ({ value: y, label: String(y) }))}
+            onSelect={v => setYear(Number(v))}
+          />
+        </div>
+
+        <button type="button" onClick={() => setView(v => addMonths(v, 1))} disabled={!canNext}
+          style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "transparent", cursor: canNext ? "pointer" : "not-allowed", color: canNext ? "var(--text-2)" : "var(--text-3)", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          ›
+        </button>
+      </div>
+
+      {/* Weekday labels */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 4 }}>
+        {["Mo","Tu","We","Th","Fr","Sa","Su"].map(d => (
+          <span key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: "var(--text-3)", padding: "4px 0" }}>{d}</span>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {days.map(day => {
+          const inMonth   = isSameMonth(day, view);
+          const disabled  = isAfter(day, cap);
+          const sel       = !!(selected && isSameDay(day, selected));
+          const todayMark = isToday(day);
+
+          return (
+            <button key={day.toISOString()} type="button"
+              disabled={disabled || !inMonth}
+              onClick={() => onChange(dfmt(day, "yyyy-MM-dd"))}
+              style={{
+                padding: "7px 0", borderRadius: 8, fontSize: 12, fontWeight: sel || todayMark ? 700 : 400,
+                border: !sel && todayMark ? "1.5px solid var(--accent)" : "none",
+                background: sel ? "var(--accent)" : "transparent",
+                color: sel ? "#fff" : !inMonth || disabled ? "var(--text-3)" : todayMark ? "var(--accent)" : "var(--text-1)",
+                cursor: disabled || !inMonth ? "default" : "pointer",
+                opacity: !inMonth ? 0.2 : 1,
+                transition: "background 0.12s",
+              }}
+            >
+              {dfmt(day, "d")}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected date label */}
+      {selected && !isAfter(selected, cap) && (
+        <p style={{ textAlign: "center", fontSize: 11, color: "var(--accent)", fontWeight: 600, marginTop: 10 }}>
+          {dfmt(selected, "EEEE, MMMM d, yyyy")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+type Patient = { id: number; name: string; email: string; phone: string; createdAt: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string; };
+type Appointment = {
+  id: number; appointmentDate: string; startTime: string; endTime: string;
+  status: string; sessionType?: string; notes?: string; cancellationReason?: string;
+  rating?: number; feedback?: string;
+};
+type SessionNote = { id: number; appointmentId: number; content?: string; subjective?: string; objective?: string; assessment?: string; plan?: string; updatedAt: string; };
+type Invoice     = { id: number; appointmentId: number; status: string; amount: number; discountAmount?: number; finalAmount?: number; discountReason?: string; paymentMethod?: string; toAccount?: string | null; bankAccountName?: string | null; };
+type AppointmentWithJourney = Appointment & { previousAppointmentId?: number | null; returningPatient?: boolean; };
+type MoodLog     = { id: number; appointmentId?: number; moodScore: number; logDate: string; note?: string; };
+type BankAccount = { id: number; accountName: string; bankName: string; accountNumber?: string; ifscCode?: string; upiId?: string; isDefault: boolean; active: boolean; };
+
+const STATUS_CFG: Record<string, { label: string; textColor: string; icon: React.ReactNode }> = {
+  AWAITING_PAYMENT:     { label: "Awaiting Payment", textColor: "#f59e0b", icon: <Hourglass className="w-4 h-4" /> },
+  PAYMENT_UNDER_REVIEW: { label: "Verifying Payment",textColor: "#0891b2", icon: <Search className="w-4 h-4" /> },
+  CONFIRMED:            { label: "Confirmed",        textColor: "#00c48c", icon: <CheckCircle2 className="w-4 h-4" /> },
+  COMPLETED:            { label: "Completed",        textColor: "#4f6ef7", icon: <Check className="w-4 h-4" /> },
+  CANCELLED:            { label: "Cancelled",        textColor: "#f43f5e", icon: <XCircle className="w-4 h-4" /> },
+};
+
+export default function ClientTimelinePage() {
+  const params = useParams();
+  const router = useRouter();
+  const [patient, setPatient]           = useState<Patient | null>(null);
+  const [appointments, setAppointments] = useState<AppointmentWithJourney[]>([]);
+  const [services, setServices]         = useState<any[]>([]);
+  const [sessionNotes, setSessionNotes] = useState<Record<number, SessionNote>>({});
+  const [invoices, setInvoices]         = useState<Record<number, Invoice>>({});
+  const [moodLogs, setMoodLogs]         = useState<MoodLog[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const themeMode = useThemeMode();
+  const chartC = CHART[themeMode];
+
+  // Timeline controls
+  const [search, setSearch]       = useState("");
+  const [sortDesc, setSortDesc]   = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Modal states
+  const [noteModalOpen, setNoteModalOpen] = useState(false);
+  const [noteSessionId, setNoteSessionId] = useState<number | "">("");
+  const [modalNoteText, setModalNoteText] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [schedDate, setSchedDate] = useState("");
+  const [schedTime, setSchedTime] = useState("");
+  const [schedType, setSchedType] = useState("");
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [schedSaving, setSchedSaving] = useState(false);
+
+  const [pastModalOpen, setPastModalOpen]   = useState(false);
+  const [pastDate, setPastDate]             = useState("");
+  const [pastTime, setPastTime]             = useState("");
+  const [pastType, setPastType]             = useState("");
+  const [pastStatus, setPastStatus]         = useState("COMPLETED");
+  const [pastNotes, setPastNotes]           = useState("");
+  const [pastSaving, setPastSaving]         = useState(false);
+
+  // Risk flag modal states
+  const [riskModalOpen, setRiskModalOpen] = useState(false);
+  const [riskReason, setRiskReason] = useState("");
+  const [riskSaving, setRiskSaving] = useState(false);
+
+  // Notes editing state
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null); // appointmentId being edited
+  const [soapNote, setSoapNote]           = useState({ subjective: "", objective: "", assessment: "", plan: "" });
+  const [savingNote, setSavingNote]       = useState(false);
+
+  // Set session price state
+  const [sessionPriceModal, setSessionPriceModal] = useState<{ invoiceId: number; currentAmount: number; aptId: number } | null>(null);
+  const [sessionPriceInput, setSessionPriceInput] = useState("");
+  const [sessionPriceError, setSessionPriceError] = useState("");
+  const [sessionPriceSaving, setSessionPriceSaving] = useState(false);
+
+  // Edit patient state
+  const [editPatientOpen, setEditPatientOpen]   = useState(false);
+  const [editPatientForm, setEditPatientForm]   = useState<{ name: string; email: string; phone: string }>({ name: "", email: "", phone: "" });
+  const [editPatientSaving, setEditPatientSaving] = useState(false);
+
+  // Edit session state
+  const [editSessionOpen, setEditSessionOpen]   = useState(false);
+  const [editSessionId, setEditSessionId]       = useState<number | null>(null);
+  const [editSessionForm, setEditSessionForm]   = useState({ appointmentDate: "", startTime: "", sessionType: "", notes: "" });
+  const [editSessionSaving, setEditSessionSaving] = useState(false);
+
+  // Schedule modal payment state
+  const [schedPayStatus, setSchedPayStatus] = useState<"AWAITING" | "PAID">("AWAITING");
+  const [schedPayAmount, setSchedPayAmount] = useState("");
+  const [schedPayMethod, setSchedPayMethod] = useState("CASH");
+
+  // Past session modal payment state
+  const [pastPayStatus, setPastPayStatus] = useState<"AWAITING" | "PAID">("PAID");
+  const [pastPayAmount, setPastPayAmount] = useState("");
+  const [pastPayMethod, setPastPayMethod] = useState("CASH");
+
+  // Bank accounts (fetched on mount)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+
+  // Schedule modal: bank account
+  const [schedBankAccountId, setSchedBankAccountId] = useState<number | "">("");
+  const [schedBankAccountName, setSchedBankAccountName] = useState("");
+
+  // Past session modal: bank account
+  const [pastBankAccountId, setPastBankAccountId] = useState<number | "">("");
+  const [pastBankAccountName, setPastBankAccountName] = useState("");
+
+  const fetchNotes = (patientId: string | string[]) =>
+    api.get(`/notes/patient/${patientId}`).then(r =>
+      setSessionNotes(Object.fromEntries(r.data.map((n: SessionNote) => [n.appointmentId, n])))
+    ).catch(() => {});
+
+  const applyPaymentAfterCreate = async (
+    appointmentId: number,
+    payStatus: "AWAITING" | "PAID",
+    payAmount: string,
+    payMethod: string,
+    bankAccId?: number | "",
+    bankAccName?: string,
+  ) => {
+    try {
+      const invRes = await api.get(`/invoices/appointment/${appointmentId}`);
+      const inv = invRes.data;
+      if (payAmount.trim() && inv.id) {
+        await api.patch(`/invoices/${inv.id}/amount`, { amount: payAmount.trim() });
+      }
+      if (payStatus === "PAID" && inv.id) {
+        const payBody: Record<string, string> = { paymentMethod: payMethod };
+        if (bankAccId) payBody.bankAccountId = String(bankAccId);
+        if (bankAccName) payBody.bankAccountName = bankAccName;
+        const updatedInv = await api.patch(`/invoices/${inv.id}/pay`, payBody);
+        setInvoices(prev => ({ ...prev, [appointmentId]: updatedInv.data }));
+      } else {
+        const freshInv = await api.get(`/invoices/appointment/${appointmentId}`);
+        setInvoices(prev => ({ ...prev, [appointmentId]: freshInv.data }));
+      }
+    } catch (e) {
+      console.error("Payment update failed:", e);
+    }
+  };
+
+  const handleSetSessionPrice = async () => {
+    if (!sessionPriceModal) return;
+    setSessionPriceError("");
+    const val = parseFloat(sessionPriceInput);
+    if (isNaN(val) || val <= 0) { setSessionPriceError("Enter a valid amount greater than ₹0."); return; }
+    setSessionPriceSaving(true);
+    try {
+      await api.patch(`/invoices/${sessionPriceModal.invoiceId}/amount`, { amount: val.toString() });
+      const freshInv = await api.get(`/invoices/appointment/${sessionPriceModal.aptId}`);
+      setInvoices(prev => ({ ...prev, [sessionPriceModal.aptId]: freshInv.data }));
+      setSessionPriceModal(null);
+      setSessionPriceInput("");
+    } catch (e: any) {
+      const msg = e?.response?.data?.message;
+      setSessionPriceError(msg?.trim() ? msg : "Failed to update price.");
+    } finally {
+      setSessionPriceSaving(false);
+    }
+  };
+
+  const handleEditPatient = async () => {
+    if (!patient || !editPatientForm.name.trim() || !editPatientForm.phone.trim()) return;
+    setEditPatientSaving(true);
+    try {
+      const detailsRes = await api.patch(`/patients/${patient.id}/details`, {
+        name:  editPatientForm.name,
+        email: editPatientForm.email,
+        phone: editPatientForm.phone,
+      });
+      setPatient(detailsRes.data);
+      setEditPatientOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to update patient details");
+    } finally {
+      setEditPatientSaving(false);
+    }
+  };
+
+  const handleDeleteSession = async (aptId: number) => {
+    if (!confirm("Delete this session and its related records? This cannot be undone.")) return;
+    try {
+      await api.delete(`/appointments/${aptId}`);
+      setAppointments(prev => prev.filter(a => a.id !== aptId));
+      setInvoices(prev => { const next = { ...prev }; delete next[aptId]; return next; });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete session");
+    }
+  };
+
+  const handleEditSession = async () => {
+    if (!editSessionId) return;
+    setEditSessionSaving(true);
+    try {
+      const res = await api.patch(`/appointments/${editSessionId}/details`, {
+        appointmentDate: editSessionForm.appointmentDate || undefined,
+        startTime:       editSessionForm.startTime       || undefined,
+        sessionType:     editSessionForm.sessionType     || undefined,
+        notes:           editSessionForm.notes,
+      });
+      setAppointments(prev => prev.map(a => a.id === editSessionId ? { ...a, ...res.data } : a));
+      setEditSessionOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to update session");
+    } finally {
+      setEditSessionSaving(false);
+    }
+  };
+
+  // Helper functions
+  const handleSaveNote = async () => {
+    if (!noteSessionId) return;
+    setNoteSaving(true);
+    try {
+      await api.patch(`/appointments/${noteSessionId}/notes`, { notes: modalNoteText });
+      setAppointments(prev => prev.map(a => a.id === Number(noteSessionId) ? { ...a, notes: modalNoteText } : a));
+      setNoteModalOpen(false);
+      setModalNoteText("");
+      setNoteSessionId("");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save note");
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleToggleRisk = async () => {
+    if (!patient) return;
+    const newFlag = !patient.riskFlag;
+    if (newFlag && !riskReason.trim()) return;
+    
+    setRiskSaving(true);
+    try {
+      const res = await api.patch(`/patients/${patient.id}/risk-flag`, {
+        riskFlag: newFlag,
+        riskReason: newFlag ? riskReason : null
+      });
+      setPatient(res.data);
+      setRiskModalOpen(false);
+      setRiskReason("");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update risk flag");
+    } finally {
+      setRiskSaving(false);
+    }
+  };
+
+  const handleDeletePatient = async () => {
+    if (!patient) return;
+    if (confirm("Are you sure you want to completely delete this patient and all related records? This action cannot be undone.")) {
+      try {
+        await api.delete(`/patients/${patient.id}`);
+        router.push('/dashboard/patients');
+      } catch (err) {
+        console.error(err);
+        alert("Failed to delete patient");
+      }
+    }
+  };
+
+  const fetchAvailableSlots = async (dateStr: string) => {
+    try {
+      const res = await api.get(`/me/slots?date=${dateStr}`);
+      setAvailableSlots(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setAvailableSlots([]);
+    }
+  };
+
+  const fetchServices = () => {
+    if (services.length === 0) {
+      api.get("/services")
+        .catch(() => api.get("/services/public"))
+        .then(r => setServices(r.data))
+        .catch(() => {});
+    }
+  };
+
+  const openScheduleModal = () => {
+    setScheduleModalOpen(true);
+    fetchServices();
+    const defaultAcc = bankAccounts.find(b => b.isDefault) ?? bankAccounts[0] ?? null;
+    if (defaultAcc) { setSchedBankAccountId(defaultAcc.id); setSchedBankAccountName(defaultAcc.accountName); }
+  };
+  const openPastModal = () => {
+    setPastModalOpen(true);
+    fetchServices();
+    const defaultAcc = bankAccounts.find(b => b.isDefault) ?? bankAccounts[0] ?? null;
+    if (defaultAcc) { setPastBankAccountId(defaultAcc.id); setPastBankAccountName(defaultAcc.accountName); }
+  };
+
+  const handleSchedule = async () => {
+    if (!schedDate || !schedTime || !schedType || !patient) return;
+    setSchedSaving(true);
+    try {
+      const res = await api.post('/appointments/manual', {
+        patientName: patient.name,
+        patientEmail: patient.email,
+        patientPhone: patient.phone,
+        appointmentDate: schedDate,
+        startTime: schedTime,
+        sessionType: schedType,
+        notes: ""
+      });
+      setAppointments(prev => [res.data, ...prev]);
+      await applyPaymentAfterCreate(res.data.id, schedPayStatus, schedPayAmount, schedPayMethod, schedBankAccountId, schedBankAccountName);
+      setScheduleModalOpen(false);
+      setSchedDate(""); setSchedTime(""); setSchedType("");
+      setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
+      setSchedBankAccountId(""); setSchedBankAccountName("");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to schedule appointment");
+    } finally {
+      setSchedSaving(false);
+    }
+  };
+
+  const handleAddPastSession = async () => {
+    if (!pastDate || !pastTime || !pastType || !patient) return;
+    setPastSaving(true);
+    try {
+      const res = await api.post("/appointments/past", {
+        patientId:       String(patient.id),
+        appointmentDate: pastDate,
+        startTime:       pastTime,
+        sessionType:     pastType,
+        status:          pastStatus,
+        notes:           pastNotes,
+      });
+      setAppointments(prev => [res.data, ...prev]);
+      await applyPaymentAfterCreate(res.data.id, pastPayStatus, pastPayAmount, pastPayMethod, pastBankAccountId, pastBankAccountName);
+      setPastModalOpen(false);
+      setPastDate(""); setPastTime(""); setPastType(""); setPastNotes(""); setPastStatus("COMPLETED");
+      setPastPayStatus("PAID"); setPastPayAmount(""); setPastPayMethod("CASH");
+      setPastBankAccountId(""); setPastBankAccountName("");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data || err?.message || "Unknown error";
+      const status = err?.response?.status ?? "no response";
+      console.error("Add past session failed:", status, msg);
+      alert(`Failed to add past session (${status}): ${msg}`);
+    } finally {
+      setPastSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!params.id) return;
+    Promise.allSettled([
+      api.get(`/patients/${params.id}`),
+      api.get(`/patients/${params.id}/appointments`),
+      api.get(`/services`),
+      api.get(`/notes/patient/${params.id}`),
+      api.get(`/invoices/patient/${params.id}`),
+      api.get(`/mood/patient/${params.id}`),
+      api.get(`/bank-accounts`),
+    ])
+    .then(([pRes, aRes, sRes, nRes, invRes, moodRes, bankRes]) => {
+      if (pRes.status === "fulfilled") setPatient(pRes.value.data);
+      if (aRes.status === "fulfilled") setAppointments(aRes.value.data);
+      if (sRes.status === "fulfilled") setServices(sRes.value.data);
+      if (nRes.status === "fulfilled") setSessionNotes(Object.fromEntries(nRes.value.data.map((n: SessionNote) => [n.appointmentId, n])));
+      if (invRes.status === "fulfilled") setInvoices(Object.fromEntries(invRes.value.data.map((inv: Invoice) => [inv.appointmentId, inv])));
+      if (moodRes.status === "fulfilled") setMoodLogs(moodRes.value.data);
+      if (bankRes.status === "fulfilled") setBankAccounts((bankRes.value.data ?? []).filter((b: BankAccount) => b.active));
+    })
+    .catch(console.error)
+    .finally(() => setLoading(false));
+  }, [params.id]);
+
+  // Metrics calculation
+  const metrics = useMemo(() => {
+    const total = appointments.length;
+    if (total === 0) return null;
+
+    const completed = appointments.filter(a => a.status === "COMPLETED" || a.status === "CONFIRMED");
+    const cancelled = appointments.filter(a => a.status === "CANCELLED");
+    const pastAppointments = appointments.filter(a => new Date(a.appointmentDate) < new Date());
+    
+    // Attendance rate
+    const attendanceRate = pastAppointments.length > 0 
+      ? Math.round((pastAppointments.filter(a => a.status === "COMPLETED").length / pastAppointments.length) * 100) 
+      : 100;
+
+    // Sorting to find first/last easily
+    const sorted = [...completed].sort((a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime());
+    
+    let avgGap = 0;
+    if (sorted.length > 1) {
+      const firstDate = new Date(sorted[0].appointmentDate).getTime();
+      const lastDate = new Date(sorted[sorted.length - 1].appointmentDate).getTime();
+      const daysDiff = (lastDate - firstDate) / (1000 * 60 * 60 * 24);
+      avgGap = Math.round(daysDiff / (sorted.length - 1));
+    }
+
+    const futureAppointments = appointments.filter(a => new Date(a.appointmentDate) >= new Date() && (a.status === "AWAITING_PAYMENT" || a.status === "PAYMENT_UNDER_REVIEW" || a.status === "CONFIRMED"));
+    const upcomingFollowUp = futureAppointments.length > 0 
+      ? futureAppointments.sort((a,b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime())[0].appointmentDate
+      : null;
+
+    const treatmentDuration = sorted.length > 1 
+      ? Math.round((new Date(sorted[sorted.length - 1].appointmentDate).getTime() - new Date(sorted[0].appointmentDate).getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+
+    let progressTrend = "Stable";
+    if (attendanceRate >= 80 && completed.length > 3) progressTrend = "Improving";
+    if (cancelled.length > completed.length) progressTrend = "Requires Attention";
+
+    const allNotes = completed.map(a => a.notes).filter(Boolean).join(" ");
+    
+    const commonTopics = ["anxiety", "depression", "stress", "relationship", "sleep", "focus", "trauma", "coping", "career", "family"];
+    const foundTopics = commonTopics.filter(t => allNotes.toLowerCase().includes(t));
+    const keyDiscussionTopics = foundTopics.length > 0 ? foundTopics : ["General Well-being"];
+
+    const primaryConcerns = sorted.length > 0 && sorted[0].notes 
+      ? (sorted[0].notes.length > 50 ? sorted[0].notes.substring(0, 50) + "..." : sorted[0].notes)
+      : "Not specified initially";
+
+    return {
+      total,
+      completed: completed.length,
+      cancelled: cancelled.length,
+      attendanceRate,
+      firstVisit: sorted.length > 0 ? sorted[0].appointmentDate : null,
+      lastVisit: sorted.length > 0 ? sorted[sorted.length - 1].appointmentDate : null,
+      avgGap,
+      upcomingFollowUp,
+      treatmentDuration,
+      progressTrend,
+      keyDiscussionTopics,
+      primaryConcerns
+    };
+  }, [appointments]);
+
+  const aiSummaryText = useMemo(() => {
+    if (!metrics || metrics.completed === 0) return "Not enough session data to generate a summary.";
+    
+    const topics = metrics.keyDiscussionTopics.join(", ");
+    let text = `Based on ${metrics.completed} completed sessions, the client has maintained a ${metrics.attendanceRate}% attendance rate. `;
+    
+    if (metrics.progressTrend === "Improving") {
+      text += `They have shown consistent engagement and an improving progress trend. `;
+    } else if (metrics.progressTrend === "Requires Attention") {
+      text += `There have been some attendance inconsistencies which may require attention. `;
+    }
+
+    text += `Primary recurring themes discussed include ${topics}. `;
+
+    if (metrics.upcomingFollowUp) {
+      text += `The next follow-up is scheduled for ${new Date(metrics.upcomingFollowUp).toLocaleDateString()}, where focus should remain on current coping strategies.`;
+    } else {
+      text += `No upcoming follow-up is currently scheduled; it is recommended to reach out for continuation of care.`;
+    }
+
+    return text;
+  }, [metrics]);
+
+  // Timeline Filtering & Sorting
+  const filteredTimeline = useMemo(() => {
+    let result = appointments.filter(a => {
+      const query = search.toLowerCase();
+      if (!query) return true;
+      return (
+        (a.sessionType?.toLowerCase().includes(query)) ||
+        (a.status.toLowerCase().includes(query)) ||
+        (a.notes?.toLowerCase().includes(query)) ||
+        (a.cancellationReason?.toLowerCase().includes(query))
+      );
+    });
+
+    result.sort((a, b) => {
+      const aTime = new Date(`${a.appointmentDate}T${a.startTime}`).getTime();
+      const bTime = new Date(`${b.appointmentDate}T${b.startTime}`).getTime();
+      return sortDesc ? bTime - aTime : aTime - bTime;
+    });
+
+    // Session number = position among non-cancelled appointments only (consistent with appointments list).
+    // Cancelled sessions are not counted so the numbering reflects actual attended/booked sessions.
+    const chronological = [...appointments]
+      .filter(a => a.status !== "CANCELLED")
+      .sort((a, b) =>
+        new Date(`${a.appointmentDate}T${a.startTime}`).getTime() -
+        new Date(`${b.appointmentDate}T${b.startTime}`).getTime()
+      );
+
+    return result.map(apt => {
+      const index = chronological.findIndex(c => c.id === apt.id);
+      return { ...apt, sessionNumber: index >= 0 ? index + 1 : null };
+    });
+  }, [appointments, search, sortDesc]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "400px" }}>
+        <div className="soft-card" style={{ width: 40, height: 40, borderRadius: "50%", display: "flex", justifyContent: "center", alignItems: "center", animation: "pulseOpacity 1.5s infinite" }}>
+          <Hourglass style={{ width: 20, height: 20, color: "var(--accent)" }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (!patient) return <div>Patient not found.</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 32 }} className="anim-fade-up">
+      
+      {/* Risk Flag Banner */}
+      {patient.riskFlag && (
+        <div style={{ padding: "16px 20px", borderRadius: 20, background: "var(--danger-bg)", border: "1px solid var(--danger-brd)", display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div className="icon-badge icon-badge--danger" style={{ flexShrink: 0 }}>
+            <AlertCircle />
+          </div>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: "var(--danger)", marginBottom: 4 }}>HIGH RISK PATIENT</h3>
+            <p style={{ fontSize: 14, color: "var(--text-2)" }}>{patient.riskReason}</p>
+            {patient.riskFlaggedAt && (
+              <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>Flagged on {new Date(patient.riskFlaggedAt).toLocaleDateString()}</p>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          <button
+            onClick={() => router.push('/dashboard/patients')}
+            className="soft-card card-hover"
+            style={{ width: 44, height: 44, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--text-1)" }}
+          >
+            <ArrowLeft style={{ width: 20, height: 20 }} />
+          </button>
+          <div>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-1)", letterSpacing: "-0.03em", marginBottom: 4 }}>
+              Client Timeline
+            </h1>
+            <p style={{ fontSize: 14, color: "var(--text-3)" }}>Detailed session history and progress</p>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <button onClick={() => setNoteModalOpen(true)} className="btn-nm"
+            style={{ padding: "10px 16px", gap: 8, fontWeight: 700, fontSize: 13, color: "var(--text-1)" }}>
+            <Plus style={{ width: 15, height: 15, color: "var(--accent)" }} /> Add Note
+          </button>
+          <button onClick={openScheduleModal} className="btn-nm"
+            style={{ padding: "10px 16px", gap: 8, fontWeight: 700, fontSize: 13, color: "var(--text-1)" }}>
+            <Calendar style={{ width: 15, height: 15, color: "var(--accent)" }} /> Schedule
+          </button>
+          <button onClick={openPastModal} className="btn-nm"
+            style={{ padding: "10px 16px", gap: 8, fontWeight: 700, fontSize: 13, color: "var(--text-1)" }}>
+            <RefreshCw style={{ width: 15, height: 15, color: "var(--accent)" }} /> Add Session
+          </button>
+          <button
+            onClick={handleDeletePatient}
+            className="btn-nm"
+            style={{ padding: "10px 16px", gap: 8, fontWeight: 700, fontSize: 13, color: "var(--danger)" }}
+          >
+            <Trash2 style={{ width: 15, height: 15 }} /> Delete
+          </button>
+          <button
+            onClick={() => {
+              if (patient.riskFlag) {
+                if (confirm("Are you sure you want to clear the risk flag?")) handleToggleRisk();
+              } else {
+                setRiskModalOpen(true);
+              }
+            }}
+            className="btn-nm"
+            style={{ padding: "10px 16px", gap: 8, fontWeight: 700, fontSize: 13, background: patient.riskFlag ? "var(--danger-bg)" : undefined, color: patient.riskFlag ? "var(--danger)" : "var(--text-3)" }}
+          >
+            <AlertCircle style={{ width: 15, height: 15 }} />
+            {patient.riskFlag ? "Clear Risk Flag" : "Flag as High Risk"}
+          </button>
+        </div>
+      </div>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          body * { visibility: hidden; }
+          #summary-card, #summary-card * { visibility: visible; }
+          #summary-card { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none !important; border: 1px solid #ddd; }
+          .no-print { display: none !important; }
+        }
+      `}} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 1fr) minmax(300px, 2.5fr)", gap: 24, alignItems: "start" }}>
+        
+        {/* Left Column: Patient Info & Metrics */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 24, position: "sticky", top: 24 }}>
+          
+          {/* ONE-CLICK SESSION SUMMARY CARD */}
+          {metrics && (
+            <div id="summary-card" className="soft-card" style={{ borderRadius: 24, padding: 32, display: "flex", flexDirection: "column", gap: 24 }}>
+              {/* Header & Badges */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+                <div>
+                  <h2 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-1)", display: "flex", alignItems: "center", gap: 10 }}>
+                    <BrainCircuit style={{ width: 24, height: 24, color: "var(--accent)" }} />
+                    Treatment Summary
+                  </h2>
+                  <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>Automatically generated overview based on {metrics.completed} session(s)</p>
+                </div>
+
+                <button onClick={() => alert("Summary exported as PDF.")} className="btn-nm no-print" style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, gap: 6, color: "var(--text-1)" }}>
+                  <Download style={{ width: 14, height: 14, color: "var(--accent)" }} /> Export
+                </button>
+              </div>
+
+              {/* AI Generated Text Block */}
+              <div className="soft-card-2" style={{ padding: "20px 24px", borderRadius: 16, borderLeft: "4px solid var(--accent)", background: "rgba(91, 109, 232, 0.03)" }}>
+                <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--text-2)", fontStyle: "italic" }}>"{aiSummaryText}"</p>
+              </div>
+
+              {/* Key Metrics Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+                <div className="soft-card-2" style={{ padding: 16, borderRadius: 16 }}>
+                  <p style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Treatment Duration</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-1)" }}>{metrics.treatmentDuration} days</p>
+                </div>
+                <div className="soft-card-2" style={{ padding: 16, borderRadius: 16 }}>
+                  <p style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Next Follow-up</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: metrics.upcomingFollowUp ? "var(--text-1)" : "var(--text-3)" }}>
+                    {metrics.upcomingFollowUp ? new Date(metrics.upcomingFollowUp).toLocaleDateString() : "Not Scheduled"}
+                  </p>
+                </div>
+                <div className="soft-card-2" style={{ padding: 16, borderRadius: 16 }}>
+                  <p style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Progress Trend</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: metrics.progressTrend === "Improving" ? "var(--success)" : "var(--text-1)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <TrendingUp style={{ width: 14, height: 14 }} /> {metrics.progressTrend}
+                  </p>
+                </div>
+                <div className="soft-card-2" style={{ padding: 16, borderRadius: 16 }}>
+                  <p style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Primary Concerns</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {metrics.primaryConcerns}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Patient Card */}
+          <SpotlightDiv className="soft-card card-hover" style={{ borderRadius: 24, padding: 28, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+            <div className="team-avatar" style={{ width: 80, height: 80, borderRadius: "50%", fontSize: 32, marginBottom: 16 }}>
+              {patient.name.charAt(0).toUpperCase()}
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-1)", marginBottom: 4 }}>{patient.name}</h2>
+            <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 16, fontFamily: "monospace" }}>ID: {patient.id.toString().padStart(5, "0")}</p>
+
+            <button onClick={() => { setEditPatientForm({ name: patient.name, email: patient.email || "", phone: patient.phone || "" }); setEditPatientOpen(true); }}
+              className="btn-nm"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", cursor: "pointer", color: "var(--accent)", fontWeight: 600, fontSize: 12, marginBottom: 16 }}>
+              <Pencil style={{ width: 12, height: 12 }} /> Edit Details
+            </button>
+
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="soft-card-2" style={{ borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "var(--text-2)" }}>
+                <Phone style={{ width: 16, height: 16, color: "var(--accent)" }} />
+                <span>{patient.phone || "No phone provided"}</span>
+              </div>
+              {patient.email && (
+                <div className="soft-card-2" style={{ borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "var(--text-2)" }}>
+                  <Mail style={{ width: 16, height: 16, color: "var(--accent)" }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{patient.email}</span>
+                </div>
+              )}
+
+            </div>
+          </SpotlightDiv>
+
+          {/* Metrics Card */}
+          {metrics && (
+            <SpotlightDiv className="soft-card card-hover" style={{ borderRadius: 24, padding: 28 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-1)", marginBottom: 20 }}>Journey Summary</h3>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div className="soft-card-2" style={{ borderRadius: 16, padding: "16px", textAlign: "center" }}>
+                  <p style={{ fontSize: 24, fontWeight: 800, color: "var(--accent)" }}>{metrics.total}</p>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", marginTop: 4 }}>Total Sessions</p>
+                </div>
+                <div className="soft-card-2" style={{ borderRadius: 16, padding: "16px", textAlign: "center" }}>
+                  <p style={{ fontSize: 24, fontWeight: 800, color: metrics.attendanceRate > 75 ? "var(--success)" : "var(--warning)" }}>{metrics.attendanceRate}%</p>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", marginTop: 4 }}>Attendance</p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: "1px solid var(--card-border)" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-3)" }}>First Visit</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
+                    {metrics.firstVisit ? new Date(metrics.firstVisit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: "1px solid var(--card-border)" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-3)" }}>Last Visit</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
+                    {metrics.lastVisit ? new Date(metrics.lastVisit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-3)" }}>Avg. Gap</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
+                    {metrics.avgGap > 0 ? `${metrics.avgGap} days` : "—"}
+                  </span>
+                </div>
+              </div>
+            </SpotlightDiv>
+          )}
+
+          {/* 🎭 Mood Trend Chart */}
+          {moodLogs.length > 0 && (
+            <div className="soft-card" style={{ borderRadius: 24, padding: 28 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-1)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                <Smile style={{ width: 18, height: 18, color: "var(--accent)" }} /> Mood Trend
+              </h3>
+              <p style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 20 }}>Patient-reported scores after sessions</p>
+              <div style={{ height: 160 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={moodLogs.map(m => ({ date: new Date(m.logDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }), score: m.moodScore }))} margin={{ top: 5, right: 8, left: -24, bottom: 0 }}>
+                    <CartesianGrid stroke={chartC.grid} vertical={false} />
+                    <XAxis dataKey="date" tick={{ fill: chartC.axisText, fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[1, 10]} ticks={[1, 5, 10]} tick={{ fill: chartC.axisText, fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      content={<SeriesTooltip mode={themeMode} unit="point" />}
+                      cursor={{ stroke: chartC.cursor, strokeWidth: 1 }}
+                    />
+                    <Line type="monotone" dataKey="score" stroke={chartC.accent} strokeWidth={2} dot={{ fill: chartC.accent, r: 3.5, stroke: chartC.surface, strokeWidth: 2 }} activeDot={{ r: 5, fill: chartC.accent, stroke: chartC.surface, strokeWidth: 2 }} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>Avg: <strong style={{ color: "var(--text-1)" }}>{(moodLogs.reduce((s, m) => s + m.moodScore, 0) / moodLogs.length).toFixed(1)}/10</strong></span>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>Latest: <strong style={{ color: "var(--accent)" }}>{moodLogs[moodLogs.length - 1]?.moodScore}/10</strong></span>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Right Column: Timeline */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          
+          {/* Controls */}
+          <div className="soft-card" style={{ borderRadius: 20, padding: "16px 20px", display: "flex", gap: 16, alignItems: "center" }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <Search style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "var(--text-3)" }} />
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search notes, types, status..."
+                className="nm-input"
+                style={{ paddingLeft: 44, width: "100%", borderRadius: 14 }}
+              />
+            </div>
+            <button
+              onClick={() => setSortDesc(!sortDesc)}
+              className="btn-nm"
+              style={{ padding: "12px 16px", gap: 8, fontWeight: 600, fontSize: 13, color: "var(--text-1)" }}
+            >
+              <ArrowDownUp style={{ width: 16, height: 16, color: "var(--accent)" }} />
+              {sortDesc ? "Newest First" : "Oldest First"}
+            </button>
+          </div>
+
+          {/* Timeline Nodes */}
+          {filteredTimeline.length === 0 ? (
+            <div className="soft-card" style={{ borderRadius: 24, padding: "60px 20px", textAlign: "center" }}>
+              <Calendar style={{ width: 48, height: 48, color: "var(--text-3)", margin: "0 auto 16px" }} />
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-1)" }}>No sessions found</h3>
+              <p style={{ fontSize: 14, color: "var(--text-3)" }}>Try adjusting your search criteria.</p>
+            </div>
+          ) : (
+            <div style={{ position: "relative", paddingLeft: 24, display: "flex", flexDirection: "column", gap: 32 }}>
+              {/* Timeline connecting line */}
+              <div style={{ position: "absolute", top: 20, bottom: 20, left: 24, width: 2, background: "rgba(180,185,210,0.2)" }} />
+              
+              {filteredTimeline.map((apt) => {
+                const apptInv = invoices[apt.id];
+                const effectiveStatus =
+                  (apptInv?.status === "PAID" || apptInv?.status === "WAIVED") &&
+                  (apt.status === "AWAITING_PAYMENT" || apt.status === "PAYMENT_UNDER_REVIEW" || apt.status === "PENDING")
+                    ? "CONFIRMED"
+                    : apt.status;
+                const st = STATUS_CFG[effectiveStatus] || STATUS_CFG.AWAITING_PAYMENT;
+                const isExpanded = expandedId === apt.id;
+                
+                return (
+                  <div key={apt.id} style={{ position: "relative", paddingLeft: 32 }}>
+                    {/* Node Dot */}
+                    <div style={{ 
+                      position: "absolute", left: -6, top: 24, 
+                      width: 14, height: 14, borderRadius: "50%", 
+                      background: st.textColor, 
+                      boxShadow: `0 0 0 4px var(--bg), 0 0 10px ${st.textColor}40` 
+                    }} />
+
+                    {/* Node Content */}
+                    <div className="soft-card" style={{ borderRadius: 20, overflow: "hidden", transition: "all 0.3s ease" }}>
+                      
+                      {/* Node Header */}
+                      <div style={{ padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-1)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                              {apt.sessionNumber != null ? `Session ${apt.sessionNumber}` : "Cancelled"}
+                            </span>
+                            {apt.returningPatient && (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 8, background: "var(--accent-surface)", color: "var(--accent)", display: "flex", alignItems: "center", gap: 4 }}>
+                                <RefreshCw style={{ width: 9, height: 9 }} /> Returning
+                              </span>
+                            )}
+                            <span style={{ fontSize: 12, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 4 }}>
+                              <Calendar style={{ width: 12, height: 12 }} />
+                              {new Date(apt.appointmentDate + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                            </span>
+                          </div>
+                          <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-1)", display: "flex", alignItems: "center", gap: 8 }}>
+                            {apt.sessionType ? (services.find(s => s.id.toString() === apt.sessionType)?.name || apt.sessionType.replace(/_/g, " ")) : "Session"}
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 4, marginLeft: 8 }}>
+                              <Clock style={{ width: 14, height: 14 }} /> {apt.startTime}
+                            </span>
+                          </h3>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {/* Payment Badge */}
+                          {(() => {
+                            const inv = invoices[apt.id];
+                            if (!inv) return null;
+                            const isPaid = inv.status === "PAID";
+                            const isWaived = inv.status === "WAIVED";
+                            const hasDiscount = (inv.discountAmount ?? 0) > 0;
+                            const displayAmount = hasDiscount ? inv.finalAmount : inv.amount;
+                            const fmtINR = (n?: number) => n != null ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n) : "";
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  {!isPaid && !isWaived && (
+                                    <button
+                                      onClick={() => { setSessionPriceModal({ invoiceId: inv.id, currentAmount: inv.amount, aptId: apt.id }); setSessionPriceInput(inv.amount?.toString() ?? ""); setSessionPriceError(""); }}
+                                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", padding: "2px 4px", borderRadius: 6, display: "flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 600 }}
+                                      title="Set price"
+                                    >
+                                      <Pencil style={{ width: 10, height: 10 }} /> Set Price
+                                    </button>
+                                  )}
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 8,
+                                    color: isPaid ? "var(--success)" : isWaived ? "var(--text-2)" : "var(--warning)",
+                                    background: isPaid ? "var(--success-bg)" : isWaived ? "var(--sd)" : "var(--warning-bg)",
+                                    display: "flex", alignItems: "center", gap: 4 }}>
+                                    <DollarSign style={{ width: 10, height: 10 }} />
+                                    {isPaid ? `Paid ${fmtINR(displayAmount)}` : isWaived ? "Waived" : `Unpaid ${fmtINR(inv.amount)}`}
+                                  </span>
+                                </div>
+                                {hasDiscount && isPaid && (
+                                  <span style={{ fontSize: 10, color: "var(--success)", display: "flex", alignItems: "center", gap: 3 }}>
+                                    <span style={{ textDecoration: "line-through", color: "var(--text-3)" }}>{fmtINR(inv.amount)}</span>
+                                    {inv.discountReason && ` · ${inv.discountReason}`}
+                                  </span>
+                                )}
+                                {isPaid && inv.bankAccountName && (
+                                  <span style={{ fontSize: 10, color: "var(--text-3)", fontStyle: "italic" }}>→ {inv.bankAccountName}</span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: st.textColor, background: `${st.textColor}15`, padding: "6px 12px", borderRadius: 10 }}>
+                            {st.icon} {st.label}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setEditSessionId(apt.id);
+                              setEditSessionForm({
+                                appointmentDate: apt.appointmentDate,
+                                startTime: apt.startTime,
+                                sessionType: apt.sessionType || "",
+                                notes: apt.notes || "",
+                              });
+                              setEditSessionOpen(true);
+                            }}
+                            className="icon-btn"
+                            title="Edit session"
+                          >
+                            <Pencil style={{ width: 14, height: 14 }} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSession(apt.id)}
+                            className="icon-btn"
+                            title="Delete session"
+                          >
+                            <Trash2 style={{ width: 14, height: 14 }} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expandable Body */}
+                      <div className="soft-card-2" style={{
+                        margin: isExpanded ? "0 12px 12px 12px" : "0",
+                        padding: isExpanded ? "20px" : "0",
+                        borderRadius: 16,
+                        maxHeight: isExpanded ? "800px" : "0",
+                        opacity: isExpanded ? 1 : 0,
+                        overflow: "hidden",
+                        transition: "all 0.35s ease",
+                        display: "flex", flexDirection: "column", gap: 16
+                      }}>
+                        {/* Patient booking note */}
+                        {apt.notes ? (
+                          <div>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", marginBottom: 6 }}>Session Notes / Reason</p>
+                            <p style={{ fontSize: 14, color: "var(--text-2)", lineHeight: 1.6 }}>{apt.notes}</p>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-3)", fontSize: 13 }}>
+                            <FileText style={{ width: 16, height: 16 }} /> No patient notes for this session.
+                          </div>
+                        )}
+
+                        {apt.rating && (
+                          <div style={{ borderTop: "1px solid rgba(180,185,210,0.1)", paddingTop: 16, marginTop: 4 }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                              Patient Feedback
+                            </p>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
+                              {[1, 2, 3, 4, 5].map(i => (
+                                <Star 
+                                  key={i} 
+                                  style={{
+                                    width: 16, height: 16,
+                                    color: "var(--warning)",
+                                    fill: i <= apt.rating! ? "var(--warning)" : "transparent"
+                                  }}
+                                />
+                              ))}
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)", marginLeft: 6 }}>{apt.rating}/5</span>
+                            </div>
+                            {apt.feedback && (
+                              <p style={{ fontSize: 13, color: "var(--text-2)", fontStyle: "italic", lineHeight: 1.5 }}>
+                                "{apt.feedback}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Cancellation reason */}
+                        {apt.status === "CANCELLED" && apt.cancellationReason && (
+                          <div style={{ padding: "12px 16px", borderRadius: 12, background: "var(--danger-bg)", border: "1px solid var(--danger-brd)" }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                              <AlertCircle style={{ width: 12, height: 12 }} /> Cancellation Reason
+                            </p>
+                            <p style={{ fontSize: 13, color: "var(--text-2)" }}>{apt.cancellationReason}</p>
+                          </div>
+                        )}
+
+                        {/* Mood for this session */}
+                        {(() => {
+                          const mood = moodLogs.find(m => m.appointmentId === apt.id);
+                          if (!mood) return null;
+                          const EMOJIS = ["😞","😟","😕","😐","🙂","😊","😄","😁","🤩","🥳"];
+                          return (
+                            <div style={{ padding: "12px 16px", borderRadius: 12, background: "var(--accent-surface)", border: "1px solid var(--accent-border)", display: "flex", alignItems: "center", gap: 12 }}>
+                              <span style={{ fontSize: 28 }}>{EMOJIS[mood.moodScore - 1]}</span>
+                              <div>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", marginBottom: 2 }}>Post-Session Mood</p>
+                                <p style={{ fontSize: 13, color: "var(--text-2)" }}>{mood.moodScore}/10{mood.note ? ` — "${mood.note}"` : ""}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 🔒 Private Clinical Notes */}
+                        <div style={{ borderTop: "1px solid rgba(180,185,210,0.15)", paddingTop: 16 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                              <Lock style={{ width: 11, height: 11 }} /> Private Clinical Notes (SOAP)
+                            </p>
+                            {editingNoteId !== apt.id && (
+                              <button onClick={() => {
+                                setEditingNoteId(apt.id);
+                                const existing = sessionNotes[apt.id];
+                                setSoapNote({
+                                  subjective: existing?.subjective || "",
+                                  objective: existing?.objective || "",
+                                  assessment: existing?.assessment || "",
+                                  plan: existing?.plan || "",
+                                });
+                              }}
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                                <Pencil style={{ width: 12, height: 12 }} />
+                                {sessionNotes[apt.id] ? "Edit" : "Add Note"}
+                              </button>
+                            )}
+                          </div>
+
+                          {editingNoteId === apt.id ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                <label style={{ fontSize: 12, fontWeight: 700, color: "#3b82f6", display: "flex", alignItems: "center", gap: 6 }}><span style={{width: 8, height: 8, borderRadius: '50%', background: '#3b82f6'}}></span> Subjective</label>
+                                <textarea value={soapNote.subjective} onChange={e => setSoapNote({...soapNote, subjective: e.target.value})} placeholder="What the patient reported..." rows={2} className="soft-card-2" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-1)", fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                <label style={{ fontSize: 12, fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: 6 }}><span style={{width: 8, height: 8, borderRadius: '50%', background: '#10b981'}}></span> Objective</label>
+                                <textarea value={soapNote.objective} onChange={e => setSoapNote({...soapNote, objective: e.target.value})} placeholder="Therapist's observations..." rows={2} className="soft-card-2" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-1)", fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                <label style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b", display: "flex", alignItems: "center", gap: 6 }}><span style={{width: 8, height: 8, borderRadius: '50%', background: '#f59e0b'}}></span> Assessment</label>
+                                <textarea value={soapNote.assessment} onChange={e => setSoapNote({...soapNote, assessment: e.target.value})} placeholder="Diagnosis / clinical impression..." rows={2} className="soft-card-2" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-1)", fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                <label style={{ fontSize: 12, fontWeight: 700, color: "#8b5cf6", display: "flex", alignItems: "center", gap: 6 }}><span style={{width: 8, height: 8, borderRadius: '50%', background: '#8b5cf6'}}></span> Plan</label>
+                                <textarea value={soapNote.plan} onChange={e => setSoapNote({...soapNote, plan: e.target.value})} placeholder="Treatment plan / homework..." rows={2} className="soft-card-2" style={{ width: "100%", padding: "10px 12px", borderRadius: 8, color: "var(--text-1)", fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit" }} />
+                              </div>
+
+                              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                                <button onClick={async () => {
+                                  setSavingNote(true);
+                                  try {
+                                    await api.post("/notes", { appointmentId: apt.id, ...soapNote });
+                                    await fetchNotes(params.id);
+                                    setEditingNoteId(null);
+                                  } catch(e) { console.error(e); }
+                                  finally { setSavingNote(false); }
+                                }}
+                                  disabled={savingNote}
+                                  className="btn-nm-accent"
+                                  style={{ padding: "8px 16px", gap: 6, fontWeight: 600, fontSize: 12 }}>
+                                  <Save style={{ width: 13, height: 13 }} />{savingNote ? "Saving..." : "Save"}
+                                </button>
+                                <button onClick={() => setEditingNoteId(null)}
+                                  className="btn-nm"
+                                  style={{ padding: "8px 14px", fontWeight: 600, fontSize: 12 }}>
+                                  Cancel
+                                </button>
+                                {sessionNotes[apt.id] && (
+                                  <button onClick={async () => {
+                                    if(!confirm('Delete this note?')) return;
+                                    try {
+                                      await api.delete(`/notes/${sessionNotes[apt.id].id}`);
+                                      await fetchNotes(params.id);
+                                      setEditingNoteId(null);
+                                    } catch(e) { console.error(e); }
+                                  }}
+                                    className="icon-btn"
+                                    style={{ marginLeft: "auto", padding: "8px 14px", gap: 4, fontWeight: 600, fontSize: 12, color: "var(--danger)" }}>
+                                    <Trash2 style={{ width: 12, height: 12 }} /> Delete
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            sessionNotes[apt.id] ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                {sessionNotes[apt.id].subjective && (
+                                  <div style={{ display: "flex", gap: 12 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: "#3b82f6", marginTop: 2 }}>S</span>
+                                    <span style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.5 }}>{sessionNotes[apt.id].subjective}</span>
+                                  </div>
+                                )}
+                                {sessionNotes[apt.id].objective && (
+                                  <div style={{ display: "flex", gap: 12 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: "#10b981", marginTop: 2 }}>O</span>
+                                    <span style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.5 }}>{sessionNotes[apt.id].objective}</span>
+                                  </div>
+                                )}
+                                {sessionNotes[apt.id].assessment && (
+                                  <div style={{ display: "flex", gap: 12 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: "#f59e0b", marginTop: 2 }}>A</span>
+                                    <span style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.5 }}>{sessionNotes[apt.id].assessment}</span>
+                                  </div>
+                                )}
+                                {sessionNotes[apt.id].plan && (
+                                  <div style={{ display: "flex", gap: 12 }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: "#8b5cf6", marginTop: 2 }}>P</span>
+                                    <span style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.5 }}>{sessionNotes[apt.id].plan}</span>
+                                  </div>
+                                )}
+                                {sessionNotes[apt.id].content && !sessionNotes[apt.id].subjective && !sessionNotes[apt.id].objective && !sessionNotes[apt.id].assessment && !sessionNotes[apt.id].plan && (
+                                  <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                                    {sessionNotes[apt.id].content}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <p style={{ fontSize: 13, color: "var(--text-3)", fontStyle: "italic" }}>No clinical notes recorded.</p>
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Expand Toggle — always shown */}
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : apt.id)}
+                        style={{
+                          width: "100%", padding: "12px", background: "transparent", border: "none",
+                          borderTop: "1px solid rgba(180,185,210,0.1)", cursor: "pointer",
+                          display: "flex", justifyContent: "center", alignItems: "center", gap: 6,
+                          color: "var(--text-3)", fontSize: 12, fontWeight: 600, transition: "color 0.2s"
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = "var(--text-1)"}
+                        onMouseLeave={e => e.currentTarget.style.color = "var(--text-3)"}
+                      >
+                        {isExpanded ? (
+                          <><ChevronUp style={{ width: 14, height: 14 }} /> Hide Details</>
+                        ) : (
+                          <><ChevronDown style={{ width: 14, height: 14 }} /> View Details & Notes</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add Note Modal */}
+      {noteModalOpen && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }} onClick={() => setNoteModalOpen(false)}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto", padding: 32 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-1)", marginBottom: 20 }}>Add Session Note</h3>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Select Session</label>
+                <select 
+                  className="nm-input" 
+                  style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                  value={noteSessionId}
+                  onChange={e => setNoteSessionId(Number(e.target.value))}
+                >
+                  <option value="">-- Choose a session --</option>
+                  {appointments.filter(a => a.status === "COMPLETED" || a.status === "CONFIRMED").map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.appointmentDate} - {a.sessionType || "Session"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Notes</label>
+                <textarea 
+                  className="nm-input" 
+                  style={{ width: "100%", padding: 16, borderRadius: 14, minHeight: 120, color: "var(--text-1)", resize: "vertical" }}
+                  value={modalNoteText}
+                  onChange={e => setModalNoteText(e.target.value)}
+                  placeholder="Type your notes here..."
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 }}>
+                <button onClick={() => setNoteModalOpen(false)} className="btn-nm" style={{ padding: "10px 20px", fontWeight: 600 }}>Cancel</button>
+                <button
+                  onClick={handleSaveNote}
+                  disabled={noteSaving || !noteSessionId || !modalNoteText}
+                  className="btn-nm-accent"
+                  style={{ padding: "10px 20px", fontWeight: 700 }}
+                >
+                  {noteSaving ? "Saving..." : "Save Note"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Schedule Modal */}
+      {scheduleModalOpen && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }} onClick={() => setScheduleModalOpen(false)}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto", padding: 32 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-1)", marginBottom: 20 }}>Schedule Session</h3>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Session Type</label>
+                <select
+                  className="nm-input"
+                  style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                  value={schedType}
+                  onChange={e => setSchedType(e.target.value)}
+                >
+                  <option value="">-- Choose a service --</option>
+                  {services.map(s => (
+                    <option key={s.id} value={s.id.toString()}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Date</label>
+                <input 
+                  type="date"
+                  className="nm-input"
+                  style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                  min={new Date().toISOString().split('T')[0]}
+                  value={schedDate}
+                  onChange={e => {
+                    setSchedDate(e.target.value);
+                    setSchedTime("");
+                    fetchAvailableSlots(e.target.value);
+                  }}
+                />
+              </div>
+
+              {schedDate && (
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Time</label>
+                  {availableSlots.length === 0 ? (
+                    <p style={{ fontSize: 13, color: "var(--warning)" }}>No available slots for this date.</p>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                      {availableSlots.map(time => (
+                        <button
+                          key={time}
+                          onClick={() => setSchedTime(time)}
+                          className="soft-card-2"
+                          style={{
+                            padding: "10px 0", borderRadius: 12, border: "none", cursor: "pointer",
+                            background: schedTime === time ? "var(--accent)" : undefined,
+                            color: schedTime === time ? "#fff" : "var(--text-2)",
+                            fontWeight: 600, fontSize: 13,
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          {time}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ borderTop: "1px solid rgba(180,185,210,0.15)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Payment</p>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {(["AWAITING", "PAID"] as const).map(s => (
+                    <button key={s} type="button" onClick={() => setSchedPayStatus(s)}
+                      style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1.5px solid ${schedPayStatus === s ? "var(--accent)" : "transparent"}`, background: schedPayStatus === s ? "var(--accent-surface)" : "transparent", color: schedPayStatus === s ? "var(--accent)" : "var(--text-2)", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                      {s === "AWAITING" ? "Awaiting Payment" : "Paid"}
+                    </button>
+                  ))}
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Amount (₹) — leave blank to use service fee</label>
+                  <input type="number" className="nm-input" placeholder="e.g. 800" value={schedPayAmount} onChange={e => setSchedPayAmount(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }} />
+                </div>
+                {schedPayStatus === "PAID" && (
+                  <>
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Payment Method</label>
+                      <select className="nm-input" value={schedPayMethod} onChange={e => setSchedPayMethod(e.target.value)}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}>
+                        {["CASH","UPI","CARD","MANUAL_TRANSFER","INSURANCE"].map(m => <option key={m} value={m}>{m.replace("_"," ")}</option>)}
+                      </select>
+                    </div>
+                    {bankAccounts.length > 0 && (
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Payment Credited To</label>
+                        <select className="nm-input" style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}
+                          value={schedBankAccountId}
+                          onChange={e => {
+                            const acc = bankAccounts.find(b => b.id === Number(e.target.value));
+                            setSchedBankAccountId(acc ? acc.id : "");
+                            setSchedBankAccountName(acc ? acc.accountName : "");
+                          }}>
+                          <option value="">-- Select account --</option>
+                          {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.accountName} — {b.bankName}{b.isDefault ? " (Default)" : ""}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
+                <button onClick={() => setScheduleModalOpen(false)} className="btn-nm" style={{ padding: "10px 20px", fontWeight: 600 }}>Cancel</button>
+                <button
+                  onClick={handleSchedule}
+                  disabled={schedSaving || !schedDate || !schedTime || !schedType}
+                  className="btn-nm-accent"
+                  style={{ padding: "10px 20px", fontWeight: 700 }}
+                >
+                  {schedSaving ? "Booking..." : "Confirm Booking"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Add Past Session Modal */}
+      {pastModalOpen && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }} onClick={() => setPastModalOpen(false)}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto", padding: 32 }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-1)", marginBottom: 4 }}>Add Past Session</h3>
+            <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 24 }}>Record a session that already took place. No notifications will be sent.</p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Session Type</label>
+                <select className="nm-input" style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                  value={pastType} onChange={e => setPastType(e.target.value)}>
+                  <option value="">-- Choose a service --</option>
+                  {services.map(s => <option key={s.id} value={s.id.toString()}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Date</label>
+                <MiniCalendar value={pastDate} onChange={setPastDate} maxDate={new Date()} />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Time</label>
+                <input type="time" className="nm-input" style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                  value={pastTime} onChange={e => setPastTime(e.target.value)} />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Status</label>
+                <select className="nm-input" style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                  value={pastStatus} onChange={e => setPastStatus(e.target.value)}>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CONFIRMED">Confirmed (attended, not yet completed)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Notes (optional)</label>
+                <textarea className="nm-input" rows={3} placeholder="Session notes..."
+                  style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)", resize: "vertical" }}
+                  value={pastNotes} onChange={e => setPastNotes(e.target.value)} />
+              </div>
+
+              <div style={{ borderTop: "1px solid rgba(180,185,210,0.15)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Payment</p>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {(["AWAITING", "PAID"] as const).map(s => (
+                    <button key={s} type="button" onClick={() => setPastPayStatus(s)}
+                      style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1.5px solid ${pastPayStatus === s ? "var(--accent)" : "transparent"}`, background: pastPayStatus === s ? "var(--accent-surface)" : "transparent", color: pastPayStatus === s ? "var(--accent)" : "var(--text-2)", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+                      {s === "AWAITING" ? "Awaiting Payment" : "Paid"}
+                    </button>
+                  ))}
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Amount (₹) — leave blank to use service fee</label>
+                  <input type="number" className="nm-input" placeholder="e.g. 800" value={pastPayAmount} onChange={e => setPastPayAmount(e.target.value)}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }} />
+                </div>
+                {pastPayStatus === "PAID" && (
+                  <>
+                    <div>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Payment Method</label>
+                      <select className="nm-input" value={pastPayMethod} onChange={e => setPastPayMethod(e.target.value)}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}>
+                        {["CASH","UPI","CARD","MANUAL_TRANSFER","INSURANCE"].map(m => <option key={m} value={m}>{m.replace("_"," ")}</option>)}
+                      </select>
+                    </div>
+                    {bankAccounts.length > 0 && (
+                      <div>
+                        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Payment Credited To</label>
+                        <select className="nm-input" style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}
+                          value={pastBankAccountId}
+                          onChange={e => {
+                            const acc = bankAccounts.find(b => b.id === Number(e.target.value));
+                            setPastBankAccountId(acc ? acc.id : "");
+                            setPastBankAccountName(acc ? acc.accountName : "");
+                          }}>
+                          <option value="">-- Select account --</option>
+                          {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.accountName} — {b.bankName}{b.isDefault ? " (Default)" : ""}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
+                <button onClick={() => setPastModalOpen(false)} className="btn-nm" style={{ padding: "10px 20px", fontWeight: 600 }}>Cancel</button>
+                <button onClick={handleAddPastSession} disabled={pastSaving || !pastDate || !pastTime || !pastType}
+                  className="btn-nm-accent"
+                  style={{ padding: "10px 20px", fontWeight: 700 }}>
+                  {pastSaving ? "Saving..." : "Save Session"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Set Session Price Modal */}
+      {sessionPriceModal && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }} onClick={() => setSessionPriceModal(null)}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 360, padding: 32 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)" }}>Set Session Price</h3>
+              <button onClick={() => setSessionPriceModal(null)} className="icon-btn"><X style={{ width: 20, height: 20 }} /></button>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 24 }}>
+              Current price: <strong style={{ color: "var(--text-2)" }}>₹{sessionPriceModal.currentAmount}</strong>
+            </p>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", marginBottom: 8 }}>New Amount (₹)</label>
+            <input
+              type="number" min="1" step="any" autoFocus
+              value={sessionPriceInput}
+              onChange={e => { setSessionPriceInput(e.target.value); setSessionPriceError(""); }}
+              onKeyDown={e => { if (e.key === "Enter") handleSetSessionPrice(); }}
+              className="nm-input no-icon"
+              style={{ width: "100%", padding: "14px 16px", fontSize: 16, fontWeight: 700, marginBottom: 8, boxSizing: "border-box" }}
+            />
+            {sessionPriceError && <p style={{ fontSize: 12, color: "var(--danger)", marginBottom: 12 }}>{sessionPriceError}</p>}
+            {sessionPriceInput && !sessionPriceError && parseFloat(sessionPriceInput) > 0 && parseFloat(sessionPriceInput) !== sessionPriceModal.currentAmount && (
+              <p style={{ fontSize: 12, marginBottom: 12, color: parseFloat(sessionPriceInput) < sessionPriceModal.currentAmount ? "#15803d" : "#d97706" }}>
+                {parseFloat(sessionPriceInput) < sessionPriceModal.currentAmount
+                  ? `↓ Reduced by ₹${(sessionPriceModal.currentAmount - parseFloat(sessionPriceInput)).toFixed(0)}`
+                  : `↑ Increased by ₹${(parseFloat(sessionPriceInput) - sessionPriceModal.currentAmount).toFixed(0)}`}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button onClick={() => setSessionPriceModal(null)}
+                className="btn-nm" style={{ flex: 1, padding: "12px", fontWeight: 600, fontSize: 14 }}>
+                Cancel
+              </button>
+              <button onClick={handleSetSessionPrice} disabled={sessionPriceSaving || !sessionPriceInput}
+                className="btn-nm-accent" style={{ flex: 2, padding: "12px", fontWeight: 700, fontSize: 14 }}>
+                {sessionPriceSaving ? "Saving..." : "Confirm Price"}
+              </button>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Edit Patient Modal */}
+      {editPatientOpen && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }} onClick={() => setEditPatientOpen(false)}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 420, padding: 32 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)" }}>Edit Patient Details</h3>
+              <button onClick={() => setEditPatientOpen(false)} className="icon-btn"><X style={{ width: 20, height: 20 }} /></button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {(["name", "phone", "email"] as const).map(field => (
+                <div key={field}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6, textTransform: "uppercase" }}>
+                    {field === "name" ? "Full Name" : field === "phone" ? "Phone Number" : "Email Address (optional)"}
+                  </label>
+                  <input
+                    className="nm-input"
+                    type={field === "email" ? "email" : "text"}
+                    value={editPatientForm[field]}
+                    onChange={e => setEditPatientForm(prev => ({ ...prev, [field]: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 12, color: "var(--text-1)" }}
+                  />
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button onClick={() => setEditPatientOpen(false)}
+                  className="btn-nm" style={{ flex: 1, padding: "11px 0", fontWeight: 600 }}>
+                  Cancel
+                </button>
+                <button onClick={handleEditPatient} disabled={editPatientSaving || !editPatientForm.name.trim() || !editPatientForm.phone.trim()}
+                  className="btn-nm-accent" style={{ flex: 2, padding: "11px 0", fontWeight: 700, fontSize: 14 }}>
+                  {editPatientSaving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Edit Session Modal */}
+      {editSessionOpen && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }} onClick={() => setEditSessionOpen(false)}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 460, padding: 32 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)" }}>Edit Session</h3>
+              <button onClick={() => setEditSessionOpen(false)} className="icon-btn"><X style={{ width: 20, height: 20 }} /></button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6, textTransform: "uppercase" }}>Session Type</label>
+                <select className="nm-input" value={editSessionForm.sessionType} onChange={e => setEditSessionForm(p => ({ ...p, sessionType: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}>
+                  <option value="">-- Keep existing --</option>
+                  {services.map(s => <option key={s.id} value={s.id.toString()}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6, textTransform: "uppercase" }}>Date</label>
+                <input type="date" className="nm-input" value={editSessionForm.appointmentDate}
+                  onChange={e => setEditSessionForm(p => ({ ...p, appointmentDate: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6, textTransform: "uppercase" }}>Time</label>
+                <input type="time" className="nm-input" value={editSessionForm.startTime}
+                  onChange={e => setEditSessionForm(p => ({ ...p, startTime: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6, textTransform: "uppercase" }}>Notes (optional)</label>
+                <textarea className="nm-input" rows={3} value={editSessionForm.notes}
+                  onChange={e => setEditSessionForm(p => ({ ...p, notes: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)", resize: "vertical" }} />
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button onClick={() => setEditSessionOpen(false)}
+                  className="btn-nm" style={{ flex: 1, padding: "11px 0", fontWeight: 600 }}>
+                  Cancel
+                </button>
+                <button onClick={handleEditSession} disabled={editSessionSaving}
+                  className="btn-nm-accent" style={{ flex: 2, padding: "11px 0", fontWeight: 700, fontSize: 14 }}>
+                  {editSessionSaving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+      {/* Risk Flag Modal */}
+      {riskModalOpen && typeof document !== "undefined" && createPortal(
+        <div className="overlay-enter" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 9999 }}>
+          <div className="soft-card anim-scale-in" style={{ width: "100%", maxWidth: 400, padding: 32 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div className="icon-badge icon-badge--danger" style={{ width: 36, height: 36, borderRadius: "50%" }}>
+                  <AlertCircle style={{ width: 18, height: 18 }} />
+                </div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--danger)" }}>Flag High Risk</h3>
+              </div>
+              <button onClick={() => setRiskModalOpen(false)} className="icon-btn"><X style={{ width: 20, height: 20 }} /></button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-2)", marginBottom: 8, textTransform: "uppercase" }}>Reason for Flagging</label>
+                <textarea
+                  value={riskReason}
+                  onChange={e => setRiskReason(e.target.value)}
+                  placeholder="E.g., Expressed suicidal ideation, severe crisis..."
+                  rows={4}
+                  className="soft-card-2"
+                  style={{ width: "100%", padding: "12px 16px", borderRadius: 16, color: "var(--text-1)", outline: "none", fontFamily: "inherit", resize: "none" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                <button
+                  onClick={handleToggleRisk}
+                  disabled={riskSaving || !riskReason.trim()}
+                  style={{ flex: 1, padding: "14px", borderRadius: 50, border: "none", background: "var(--danger)", color: "#fff", fontWeight: 700, fontSize: 14, cursor: (!riskSaving && riskReason.trim()) ? "pointer" : "not-allowed", opacity: (!riskSaving && riskReason.trim()) ? 1 : 0.6 }}
+                >
+                  {riskSaving ? "Flagging..." : "Confirm Flag"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+
+    </div>
+  );
+}
