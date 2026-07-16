@@ -1,0 +1,99 @@
+version: '3.8'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Individual — EC2 production stack (backend + db + HTTPS reverse proxy)
+#
+# The frontend is NOT run here — it's deployed separately on Vercel. This file
+# only runs what needs to live next to the database: Postgres, the Spring Boot
+# API, and Caddy in front of it for automatic HTTPS (so the Vercel frontend,
+# served over HTTPS, isn't blocked from calling the API as mixed content).
+#
+# Secrets come from a git-ignored `.env` file next to this compose file —
+# copy .env.prod.example to .env and fill it in before running this.
+#
+# Usage on the EC2 host:
+#   docker compose -f docker-compose.prod.yml up --build -d
+#   docker compose -f docker-compose.prod.yml logs -f individual-backend
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  individual-db:
+    image: postgres:16-alpine
+    container_name: individual-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: individual
+      POSTGRES_USER: individual
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      # Bound to localhost only — reachable for `ssh -L` admin access, never
+      # exposed to the internet. The backend reaches it via the docker network.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - individual_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U individual -d individual"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  individual-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: individual-backend
+    restart: unless-stopped
+    depends_on:
+      individual-db:
+        condition: service_healthy
+    # No public port mapping — only Caddy (same docker network) talks to this.
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://individual-db:5432/individual"
+      SPRING_DATASOURCE_USERNAME: "individual"
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: "28800000"
+      APP_BASE_URL: ${APP_BASE_URL}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8087/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: individual-caddy
+    restart: unless-stopped
+    depends_on:
+      - individual-backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  individual_pgdata:
+  caddy_data:
+  caddy_config:
