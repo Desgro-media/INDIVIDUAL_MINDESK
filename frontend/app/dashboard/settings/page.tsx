@@ -10,6 +10,7 @@ import {
   CheckCircle2, AlertCircle, Loader2, Calendar, ChevronLeft, ChevronRight,
   Landmark, Plus, Trash2, Star, Pencil, QrCode,
   Brain, Upload, ToggleLeft, ToggleRight, Check, Settings, X,
+  Copy, MessageCircle, Send,
 } from "lucide-react";
 import api from "../../../lib/api";
 import {
@@ -50,6 +51,49 @@ function compressImageToBase64(file: File, maxW = 400, maxH = 400, quality = 0.8
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// ── Booking Link Share ───────────────────────────────────────────────────────
+function BookingLinkShare({ slug, name }: { slug: string; name: string }) {
+  const [copied, setCopied] = useState(false);
+  const bookingUrl = (typeof window !== 'undefined' ? window.location.origin : '') + `/book/${slug}`;
+  const shareText = `Book a session with ${name}: ${bookingUrl}`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(bookingUrl);
+      setCopied(true);
+      toast.success('Link copied');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Could not copy — please copy manually');
+    }
+  };
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your booking link</label>
+      <p className="text-xs text-gray-400 mb-3">Share this with clients so they can book directly — no account needed on their end.</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <code className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 inline-block text-gray-600 break-all">
+          {bookingUrl}
+        </code>
+        <button type="button" onClick={handleCopy}
+          className="btn-nm" style={{ padding: '8px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          {copied ? <Check className="w-3.5 h-3.5 text-indigo-600" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer"
+          className="btn-nm" style={{ padding: '8px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+          <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+        </a>
+        <a href={`mailto:?subject=${encodeURIComponent('Book an appointment')}&body=${encodeURIComponent(shareText)}`}
+          className="btn-nm" style={{ padding: '8px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+          <Send className="w-3.5 h-3.5" /> Email
+        </a>
+      </div>
+    </div>
+  );
 }
 
 // ── Tab: Profile ─────────────────────────────────────────────────────────────
@@ -148,14 +192,7 @@ function ProfileTab() {
         <textarea rows={4} className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-400 bg-white resize-none"
           placeholder="Brief professional background…" value={bio} onChange={e => setBio(e.target.value)} />
       </div>
-      {profile && (
-        <div>
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your booking link</label>
-          <code className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 inline-block text-gray-600">
-            {typeof window !== 'undefined' ? window.location.origin : ''}/book/{profile.slug}
-          </code>
-        </div>
-      )}
+      {profile && <BookingLinkShare slug={profile.slug} name={profile.name} />}
       <button onClick={handleSave} disabled={saving} className="btn-nm-accent" style={{ padding: '10px 20px', fontSize: 13 }}>
         {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Profile
       </button>
