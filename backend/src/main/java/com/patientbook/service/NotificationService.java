@@ -142,6 +142,49 @@ public class NotificationService {
         sendTelegramIfLinked(token, smsText);
     }
 
+    // ── Platform subscription emails (no Appointment context — see buildSimpleEmailHtml) ──
+
+    @Async
+    public void sendTrialEndingSoonEmail(String name, String email, int daysRemaining) {
+        String html = buildSimpleEmailHtml(
+            "Your Trial Is Ending Soon",
+            name,
+            "Your 14-day free trial ends in " + daysRemaining + " day(s). Pay via GPay/UPI and submit your "
+                + "payment reference from the Subscription page in your dashboard to keep uninterrupted access.",
+            "<a href='" + appBaseUrl + "/dashboard/subscription' style='display:inline-block;padding:12px 28px;background:#f59e0b;color:#fff;border-radius:50px;text-decoration:none;font-weight:600;font-size:14px;'>Renew Now</a>",
+            "#f59e0b"
+        );
+        sendEmail(email, "Your Mindesk trial ends in " + daysRemaining + " day(s)", html);
+    }
+
+    @Async
+    public void sendSubscriptionActivatedEmail(String name, String email, String periodEndDisplay) {
+        String html = buildSimpleEmailHtml(
+            "Subscription Activated ✓",
+            name,
+            "Your payment has been verified and your subscription is now active through " + periodEndDisplay
+                + ". Thanks for staying with Mindesk!",
+            "<a href='" + appBaseUrl + "/dashboard' style='display:inline-block;padding:12px 28px;background:#00c48c;color:#fff;border-radius:50px;text-decoration:none;font-weight:600;font-size:14px;'>Go to Dashboard</a>",
+            "#00c48c"
+        );
+        sendEmail(email, "Subscription Activated ✓", html);
+    }
+
+    @Async
+    public void sendPaymentRejectedEmail(String name, String email, String reason) {
+        String reasonNote = (reason != null && !reason.isBlank())
+            ? "<p style='margin:0 0 16px;padding:12px 16px;background:#fef2f2;border-left:3px solid #f43f5e;border-radius:8px;font-size:13px;color:#7f1d1d;'><strong>Reason:</strong> " + reason + "</p>"
+            : "";
+        String html = buildSimpleEmailHtml(
+            "Payment Verification Failed",
+            name,
+            "We couldn't verify the payment you submitted. Please double-check the details and resubmit from the Subscription page in your dashboard.",
+            reasonNote + "<a href='" + appBaseUrl + "/dashboard/subscription' style='display:inline-block;padding:12px 28px;background:#4f6ef7;color:#fff;border-radius:50px;text-decoration:none;font-weight:600;font-size:14px;'>Resubmit Payment</a>",
+            "#f43f5e"
+        );
+        sendEmail(email, "Payment Verification Failed", html);
+    }
+
     private void sendTelegramIfLinked(String token, String text) {
         appointmentRepository.findByTrackingTokenWithPatient(token).ifPresent(appointment -> {
             String chatId = appointment.getPatient().getTelegramChatId();
@@ -222,6 +265,29 @@ public class NotificationService {
             // Footer
             "<tr><td style='padding:20px 36px;border-top:1px solid rgba(180,196,255,0.3);'>" +
             "<p style='margin:0;font-size:12px;color:#8a90bc;text-align:center;'>Sent by PatientBook &mdash; secure appointment management</p>" +
+            "</td></tr>" +
+            "</table></td></tr></table></body></html>";
+    }
+
+    // Same visual shell as buildEmailHtml, minus the date/time detail card —
+    // platform-subscription events (trial ending, payment approved/rejected)
+    // have no appointment context to show there.
+    private String buildSimpleEmailHtml(String title, String name, String message, String ctaHtml, String accentColor) {
+        return "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'></head>" +
+            "<body style='margin:0;padding:0;background:#f0f2ff;font-family:Inter,-apple-system,sans-serif;'>" +
+            "<table width='100%' cellpadding='0' cellspacing='0' style='padding:40px 20px;'><tr><td align='center'>" +
+            "<table width='560' cellpadding='0' cellspacing='0' style='background:rgba(255,255,255,0.9);border-radius:24px;overflow:hidden;box-shadow:0 8px 40px rgba(79,110,247,0.10);border:1px solid rgba(200,210,255,0.5);'>" +
+            "<tr><td style='background:" + accentColor + ";padding:28px 36px;'>" +
+            "<h1 style='margin:0;font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.03em;'>Mindesk</h1>" +
+            "<p style='margin:4px 0 0;font-size:13px;color:rgba(255,255,255,0.80);'>" + title + "</p>" +
+            "</td></tr>" +
+            "<tr><td style='padding:36px 36px 28px;'>" +
+            "<p style='margin:0 0 8px;font-size:22px;font-weight:800;color:#1b2048;letter-spacing:-0.02em;'>Hi " + name + " 👋</p>" +
+            "<p style='margin:0 0 28px;font-size:15px;color:#4a5282;line-height:1.65;'>" + message + "</p>" +
+            "<div style='text-align:center;margin-bottom:8px;'>" + ctaHtml + "</div>" +
+            "</td></tr>" +
+            "<tr><td style='padding:20px 36px;border-top:1px solid rgba(180,196,255,0.3);'>" +
+            "<p style='margin:0;font-size:12px;color:#8a90bc;text-align:center;'>Sent by Mindesk &mdash; secure practice management</p>" +
             "</td></tr>" +
             "</table></td></tr></table></body></html>";
     }

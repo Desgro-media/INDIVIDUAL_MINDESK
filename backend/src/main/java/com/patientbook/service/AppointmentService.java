@@ -59,7 +59,7 @@ public class AppointmentService {
     // ── Book a new appointment (public, via a practitioner's own booking link) ──
     @Transactional
     public AppointmentDto bookAppointment(BookingRequest request) {
-        AppUser owner = userRepository.findBySlug(request.getSlug())
+        AppUser owner = userRepository.findBySlugAndRole(request.getSlug(), com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
         return bookAppointmentForOwner(request, owner.getId());
     }
@@ -267,7 +267,7 @@ public class AppointmentService {
     // ── Request a demo call (public, via a practitioner's own link) ───────
     @Transactional
     public AppointmentDto requestDemoCall(DemoBookingRequest request) {
-        AppUser owner = userRepository.findBySlug(request.getSlug())
+        AppUser owner = userRepository.findBySlugAndRole(request.getSlug(), com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
 
         String demoEmail = (request.getPatientEmail() != null && !request.getPatientEmail().isBlank())

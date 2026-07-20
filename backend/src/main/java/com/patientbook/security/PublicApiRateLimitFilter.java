@@ -35,6 +35,12 @@ public class PublicApiRateLimitFilter extends OncePerRequestFilter {
     // Everything else under /public/** (info/services/slots/holidays) is read
     // traffic a legitimate booking page fires several of on every load.
     private static final Bucket PUBLIC_READ = new Bucket("public-read", 120, 60_000L);
+    // Login/signup were previously unthrottled — a real gap for credential
+    // stuffing/brute force now that a compromised account also exposes
+    // billing state. Signup gets a slightly looser cap (legitimate retries
+    // after a validation error are common); login is the tighter brute-force target.
+    private static final Bucket LOGIN_ATTEMPT = new Bucket("login", 10, 15 * 60_000L);
+    private static final Bucket SIGNUP_ATTEMPT = new Bucket("signup", 15, 15 * 60_000L);
 
     private static final class Counter {
         final AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());
@@ -92,6 +98,12 @@ public class PublicApiRateLimitFilter extends OncePerRequestFilter {
 
         if ("POST".equalsIgnoreCase(method) && uri.endsWith("/api/v1/appointments")) {
             return BOOKING_SUBMIT;
+        }
+        if ("POST".equalsIgnoreCase(method) && uri.endsWith("/api/v1/auth/login")) {
+            return LOGIN_ATTEMPT;
+        }
+        if ("POST".equalsIgnoreCase(method) && uri.endsWith("/api/v1/auth/signup")) {
+            return SIGNUP_ATTEMPT;
         }
         if (!uri.contains("/api/v1/public/")) {
             return null;

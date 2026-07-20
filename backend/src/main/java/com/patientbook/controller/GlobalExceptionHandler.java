@@ -1,6 +1,7 @@
 package com.patientbook.controller;
 
 import com.patientbook.service.ResourceNotFoundException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -11,6 +12,7 @@ import java.time.format.DateTimeParseException;
 import java.util.Map;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     // Record doesn't exist OR belongs to a different account — both look
@@ -41,10 +43,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(Map.of("message", "Invalid date/time or number format: " + ex.getMessage()));
     }
 
+    // Deliberately does NOT return ex.getMessage() to the client — an
+    // uncaught RuntimeException here is by definition unexpected, and its
+    // message can contain internal details (SQL, file paths, library
+    // internals). Log the real one server-side; the client only ever sees a
+    // generic message.
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
+        log.error("Unhandled RuntimeException", ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "An unexpected error occurred"));
+                .body(Map.of("message", "An unexpected error occurred"));
     }
 }

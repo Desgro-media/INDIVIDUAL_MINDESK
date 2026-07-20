@@ -20,7 +20,10 @@ api.interceptors.request.use(
 );
 
 // Response interceptor: any 401 in an admin area means the token is
-// expired or invalid — clear it and send the user to login.
+// expired or invalid — clear it and send the user to login. A 402 means the
+// token is still valid but the subscription has lapsed (see
+// SubscriptionAccessFilter on the backend) — that's a different problem, so
+// it gets a different destination: the renew screen, not a logged-out state.
 api.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -31,6 +34,13 @@ api.interceptors.response.use(
                 const hadToken = !!localStorage.getItem('token');
                 clearSession();
                 window.location.href = hadToken ? '/login?expired=1' : '/login';
+                return new Promise(() => {});
+            }
+        }
+        if (typeof window !== 'undefined' && error.response?.status === 402) {
+            const onSubscriptionPage = window.location.pathname.startsWith('/dashboard/subscription');
+            if (!onSubscriptionPage) {
+                window.location.href = '/dashboard/subscription?locked=1';
                 return new Promise(() => {});
             }
         }

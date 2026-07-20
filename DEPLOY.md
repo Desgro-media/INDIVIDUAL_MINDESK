@@ -45,9 +45,18 @@ Fill in:
   `3-15-20-100.sslip.io`. This resolves to your instance with no domain
   purchase needed, and Caddy will get it a real Let's Encrypt certificate.
 - `DB_PASSWORD` — `openssl rand -base64 32`
-- `JWT_SECRET` — `openssl rand -base64 64`
+- `JWT_SECRET` — `openssl rand -base64 64`. The backend now refuses to start
+  if this is missing, blank, or the placeholder — see JwtUtil.validateSecret.
 - `APP_BASE_URL` — leave the placeholder for now; you'll come back and set
   this to your Vercel URL after Part 2, then re-run `docker compose up -d`.
+- `ALLOWED_ORIGINS` — same value as `APP_BASE_URL` once you know it. Leaving
+  this blank falls back to allowing any origin, which is no longer
+  acceptable now that this is a paid product — lock it down.
+- `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` — your own superadmin login (see
+  "Subscriptions & the superadmin dashboard" below). Leave both blank to skip
+  provisioning one for now.
+- `PLATFORM_UPI_ID` / `PLATFORM_UPI_QR_BASE64` — the UPI ID/QR your clients
+  pay ₹9,999/year to. Shown on their in-app Subscription page.
 - Everything else (Resend, Twilio, Telegram, Google, AI chat) is optional —
   leave blank to run without those features.
 
@@ -85,12 +94,34 @@ nano .env   # set APP_BASE_URL to the Vercel URL
 docker compose -f docker-compose.prod.yml up -d   # picks up the new env var
 ```
 `APP_BASE_URL` is used to build links sent out in emails/SMS/WhatsApp (booking
-confirmations, tracking links), so it should point at the live frontend.
+confirmations, tracking links), so it should point at the live frontend. Set
+`ALLOWED_ORIGINS` to the same value (see Part 1) so CORS is locked to your
+actual frontend domain instead of allowing any origin.
 
-CORS on the backend already allows all origins
-(`backend/src/main/java/com/patientbook/security/SecurityConfig.java:84`), so
-no backend code change is needed for the Vercel domain to be allowed to call
-the API.
+## Subscriptions & the superadmin dashboard
+
+New practitioners get a 14-day free trial from signup; after that (or after a
+year of paid access), their dashboard locks until you manually verify a
+payment. Their public booking page keeps working the whole time — only the
+dashboard is gated.
+
+1. **You log in** at `https://<your-frontend-domain>/superadmin/login` with
+   `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD` (seeded once at backend startup —
+   restart the backend after first setting them).
+2. **The client pays** you ₹9,999/year via GPay/UPI to `PLATFORM_UPI_ID`,
+   outside the app — there's no payment gateway integration.
+3. **The client submits proof** from their own dashboard's Subscription page:
+   the UPI transaction reference (UTR) and optionally a screenshot.
+4. **You review and approve/reject** it from `/superadmin/dashboard`'s
+   "Pending Payment Reviews" queue. Approving activates their subscription
+   for a year (extending from their current period end if they renewed
+   early); rejecting asks them to resubmit, with your reason shown to them.
+5. You can also manually activate or suspend any tenant directly from the
+   tenant table (comps, refunds, abuse) without a submitted payment proof.
+
+Every account that existed before this feature shipped was grandfathered in
+as unrestricted — the trial/expiry clock only applies to accounts created
+from here on.
 
 ## Redeploying after code changes
 ```bash

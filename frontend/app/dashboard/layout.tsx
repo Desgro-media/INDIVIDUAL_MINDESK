@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard, Calendar, Users, Settings, Sparkles,
-  LogOut, Activity, Menu, X, Bell, BarChart, Receipt, Search,
+  LogOut, Activity, Menu, X, Bell, BarChart, Receipt, Search, ShieldCheck,
 } from "lucide-react";
 import ThemeToggle from "../../components/ThemeToggle";
 import api from "../../lib/api";
 import { clearSession } from "../../lib/authSession";
+import { getSubscriptionStatus } from "../../lib/subscriptionApi";
 
 type NavItem = {
   label: string;
@@ -136,6 +137,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebar]   = useState(false);
   const [isMobile, setMobile]       = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [locked, setLocked]         = useState(false);
+  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     const token    = localStorage.getItem("token");
@@ -183,6 +186,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => clearInterval(interval);
   }, [user]);
 
+  // Subscription gate — a locked account can still log in (per product
+  // decision), but every other dashboard page bounces to the renew screen
+  // until the superadmin approves a payment submission. The backend enforces
+  // this on every API call (402 → redirected by lib/api.ts too); this just
+  // avoids flashing real dashboard content first. Polls on the same 30s
+  // cadence as pendingCount below so a practitioner sitting on the locked
+  // Subscription page sees it unlock as soon as a superadmin approves,
+  // without needing to navigate away and back.
+  useEffect(() => {
+    if (!user) return;
+    const fetchStatus = () => {
+      getSubscriptionStatus()
+        .then(s => {
+          setLocked(s.locked);
+          setDaysRemaining(s.daysRemaining);
+          if (s.locked && !pathname.startsWith("/dashboard/subscription")) {
+            router.replace("/dashboard/subscription?locked=1");
+          }
+        })
+        .catch(() => {});
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
+    return () => clearInterval(interval);
+  }, [user, pathname, router]);
+
   const handleLogout = async () => {
     clearSession();
     router.push("/login");
@@ -195,15 +224,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (isMobile) setSidebar(false);
   };
 
-  const navItems: NavItem[] = [
-    { label: "Overview",      icon: LayoutDashboard, path: "/dashboard",              group: "Workspace" },
-    { label: "Analytics",     icon: BarChart,        path: "/dashboard/analytics",    group: "Workspace" },
-    { label: "Appointments",  icon: Calendar,        path: "/dashboard/appointments", group: "Manage",    badge: pendingCount },
-    { label: "Patients",      icon: Users,           path: "/dashboard/patients",     group: "Manage" },
-    { label: "Billing",       icon: Receipt,         path: "/dashboard/billing",      group: "Manage" },
-    { label: "Services",      icon: Sparkles,        path: "/dashboard/services",     group: "Manage" },
-    { label: "Settings",      icon: Settings,        path: "/dashboard/settings",     group: "System" },
-  ];
+  // Locked (trial/subscription lapsed) accounts only see the Subscription
+  // page — everything else 404s at the API layer anyway (SubscriptionAccessFilter),
+  // so there's no point showing nav links that would just bounce back here.
+  const subscriptionBadge = locked ? 1 : (daysRemaining != null && daysRemaining <= 3 ? daysRemaining : undefined);
+  const navItems: NavItem[] = locked
+    ? [{ label: "Subscription", icon: ShieldCheck, path: "/dashboard/subscription", group: "Account", badge: subscriptionBadge }]
+    : [
+        { label: "Overview",      icon: LayoutDashboard, path: "/dashboard",              group: "Workspace" },
+        { label: "Analytics",     icon: BarChart,        path: "/dashboard/analytics",    group: "Workspace" },
+        { label: "Appointments",  icon: Calendar,        path: "/dashboard/appointments", group: "Manage",    badge: pendingCount },
+        { label: "Patients",      icon: Users,           path: "/dashboard/patients",     group: "Manage" },
+        { label: "Billing",       icon: Receipt,         path: "/dashboard/billing",      group: "Manage" },
+        { label: "Services",      icon: Sparkles,        path: "/dashboard/services",     group: "Manage" },
+        { label: "Settings",      icon: Settings,        path: "/dashboard/settings",     group: "System" },
+        { label: "Subscription",  icon: ShieldCheck,     path: "/dashboard/subscription", group: "System", badge: subscriptionBadge },
+      ];
 
   const pageTitle = (() => {
     const seg = pathname.split("/").pop();

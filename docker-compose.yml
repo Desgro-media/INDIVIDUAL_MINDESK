@@ -50,9 +50,19 @@ services:
       SPRING_DATASOURCE_URL: "jdbc:postgresql://individual-db:5432/individual"
       SPRING_DATASOURCE_USERNAME: "individual"
       SPRING_DATASOURCE_PASSWORD: "individual_dev_pw"
-      # Dev-only placeholder — generate a real secret before any real deployment,
-      # e.g. `openssl rand -base64 64`, and pass it in via a git-ignored .env file.
-      JWT_SECRET: "CHANGE_ME_generate_a_real_256bit_secret_before_deploying"
+      # Dev-only fixed secret (safe to commit — never used in prod). The backend
+      # now fails to start on the literal CHANGE_ME placeholder or a too-short
+      # secret (see JwtUtil.validateSecret), so local dev needs a real-looking
+      # value here too. Production still generates its own via
+      # `openssl rand -base64 64` into a git-ignored .env (see DEPLOY.md).
+      JWT_SECRET: "OEYISqq5TnGY4KUgoQvgJh1Qd5ct0vP4yK6dvcgfEEwERGT1QyRmdo/sA0ixQRqxn3SzetzK5DsveKBeLr1Bug=="
+      # Superadmin login — real values come from a git-ignored .env file next
+      # to this compose file (docker compose loads it automatically); falls
+      # back to a dev-only placeholder if that .env doesn't set them, so a
+      # fresh clone still boots. Never commit real values here directly — see
+      # .env.prod.example for the production equivalent.
+      SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@mindesk.local}"
+      SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-dev-only-admin-pw-2026}"
       JWT_EXPIRATION: "28800000"
       APP_BASE_URL: "http://localhost:3001"
       # Optional integrations — leave blank to run without them; the app

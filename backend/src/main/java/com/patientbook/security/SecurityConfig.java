@@ -15,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -32,6 +33,8 @@ public class SecurityConfig {
     private final JwtAuthEntryPoint unauthorizedHandler;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final PublicApiRateLimitFilter publicApiRateLimitFilter;
+    private final SubscriptionAccessFilter subscriptionAccessFilter;
+    private final SuperAdminIpFilter superAdminIpFilter;
 
     // Comma-separated list of allowed frontend origins, e.g.
     // "https://app.yourdomain.com,https://yourdomain.com". Defaults to "*"
@@ -68,6 +71,17 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .exceptionHandling(exception -> exception.authenticationEntryPoint(unauthorizedHandler))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Explicit production-grade headers — this is a pure JSON API (no
+            // HTML views), so a locked-down CSP costs nothing functionally but
+            // closes off clickjacking/framing and stray-referrer leakage.
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.deny())
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .includeSubDomains(true)
+                    .maxAgeInSeconds(31536000))
+                .referrerPolicy(referrer -> referrer.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+            )
             .authorizeHttpRequests(auth ->
                 auth.requestMatchers("/api/v1/auth/me").authenticated() // must precede the wildcard below
                     .requestMatchers("/api/v1/auth/**").permitAll()
@@ -78,12 +92,33 @@ public class SecurityConfig {
                     .requestMatchers("/api/v1/chat").permitAll() // Public chatbot
                     .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/mood").permitAll()
                     .requestMatchers("/actuator/**").permitAll()
+                    // Spring Boot's internal error-page forward. A denied
+                    // request (e.g. a non-superadmin hitting /superadmin/**)
+                    // triggers AccessDeniedHandlerImpl's sendError(403), which
+                    // re-enters this SAME filter chain as a fresh dispatch to
+                    // /error — but JwtAuthenticationFilter (an OncePerRequestFilter)
+                    // skips ERROR dispatches by default, so that re-entry has
+                    // no authentication. Without this permitAll, /error itself
+                    // gets rejected by anyRequest().authenticated() and its 401
+                    // clobbers the original 403. First real trigger for this is
+                    // the superadmin rule below (previously every rule here was
+                    // permitAll or plain authenticated(), which only ever
+                    // produces 401s, not this 403-via-error-dispatch path).
+                    .requestMatchers("/error").permitAll()
+                    // URL-level rule for the superadmin surface — belt-and-braces
+                    // alongside SuperAdminController's own @PreAuthorize.
+                    .requestMatchers("/api/v1/superadmin/**").hasAuthority(Roles.SUPERADMIN)
                     .anyRequest().authenticated()
             );
 
         http.authenticationProvider(authenticationProvider());
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(publicApiRateLimitFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(superAdminIpFilter, UsernamePasswordAuthenticationFilter.class);
+        // Runs after the JWT filter (needs SecurityContextHolder already
+        // populated) — blocks the tenant dashboard API once a trial/subscription
+        // has lapsed. See SubscriptionAccessFilter for the exact scope.
+        http.addFilterAfter(subscriptionAccessFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

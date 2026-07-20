@@ -116,6 +116,13 @@ export default function Home() {
                 </span>
               </div>
 
+              <div className="flex items-center gap-2.5 mb-5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#5FE0C8]/10 border border-[#5FE0C8]/25 text-[#5FE0C8] text-[12px] font-semibold">
+                  14-day free trial
+                </span>
+                <span className="text-white/40 text-[13px]">then just ₹9,999/year</span>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link
                   href="/signup"
@@ -234,7 +241,7 @@ export default function Home() {
             Ready to run your own practice?
           </h2>
           <p className="text-white/50 text-lg font-light mb-10 max-w-xl mx-auto">
-            Set up your booking page in minutes. No credit card required.
+            Set up your booking page in minutes. 14-day free trial, then ₹9,999/year — no credit card required.
           </p>
           <Link
             href="/signup"

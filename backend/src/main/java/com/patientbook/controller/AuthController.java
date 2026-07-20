@@ -6,9 +6,11 @@ import com.patientbook.dto.SignupRequest;
 import com.patientbook.entity.AppUser;
 import com.patientbook.entity.ClinicService;
 import com.patientbook.entity.ClinicSettings;
+import com.patientbook.entity.Subscription;
 import com.patientbook.repository.AppUserRepository;
 import com.patientbook.repository.ClinicServiceRepository;
 import com.patientbook.repository.ClinicSettingsRepository;
+import com.patientbook.repository.SubscriptionRepository;
 import com.patientbook.security.JwtUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -33,8 +36,11 @@ public class AuthController {
     private final AppUserRepository appUserRepository;
     private final ClinicServiceRepository clinicServiceRepository;
     private final ClinicSettingsRepository clinicSettingsRepository;
+    private final SubscriptionRepository subscriptionRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+
+    private static final int TRIAL_DAYS = 14;
 
     // Every freelancer creates their own account here — there is no admin
     // who provisions accounts for anyone else.
@@ -56,6 +62,7 @@ public class AuthController {
         user = appUserRepository.save(user);
 
         seedDefaultsFor(user.getId(), user.getName());
+        startTrial(user.getId());
 
         return ResponseEntity.ok(buildAuthResponse(user, issueToken(email, request.getPassword())));
     }
@@ -103,7 +110,21 @@ public class AuthController {
                 .name(appUser.getName())
                 .slug(appUser.getSlug())
                 .jobTitle(appUser.getJobTitle())
+                .role(appUser.getRole())
                 .build();
+    }
+
+    // New signups start a 14-day trial. Existing (pre-launch) accounts are
+    // handled separately — see StartupInitializer, which grandfathers them
+    // as ACTIVE with no forced expiry instead of retroactively trial-gating them.
+    private void startTrial(Long psychologistId) {
+        LocalDateTime now = LocalDateTime.now();
+        subscriptionRepository.save(Subscription.builder()
+                .psychologistId(psychologistId)
+                .status("TRIALING")
+                .trialStartDate(now)
+                .trialEndDate(now.plusDays(TRIAL_DAYS))
+                .build());
     }
 
     private String generateUniqueSlug(String name) {

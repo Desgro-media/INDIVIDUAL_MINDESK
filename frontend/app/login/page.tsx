@@ -34,11 +34,11 @@ function LoginForm() {
     // session — it may be stale, expired, or left behind on a shared
     // machine. Confirm it against the server before skipping the login form.
     api.get("/auth/me")
-      .then(() => {
+      .then((res) => {
         // Mirror the confirmed token into the middleware cookie first,
         // otherwise the /dashboard redirect bounces straight back here.
         syncSessionCookie();
-        router.replace("/dashboard");
+        router.replace(res.data.role === "ROLE_SUPERADMIN" ? "/superadmin/dashboard" : "/dashboard");
       })
       .catch(() => {
         clearSession();
@@ -62,8 +62,12 @@ function LoginForm() {
         username: res.data.username,
         name: res.data.name,
         slug: res.data.slug,
+        role: res.data.role,
       });
-      router.push("/dashboard");
+      // This form is the practitioner entry point — a superadmin account
+      // (there's only ever one, seeded server-side) still routes correctly
+      // if it ends up here instead of /superadmin/login.
+      router.push(res.data.role === "ROLE_SUPERADMIN" ? "/superadmin/dashboard" : "/dashboard");
     } catch (err) {
       setError("Invalid email or password");
       setLoading(false);
