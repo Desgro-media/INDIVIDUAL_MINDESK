@@ -34,7 +34,7 @@ export default function QuoteRotator() {
   }, [index]);
 
   return (
-    <section className="w-full bg-gradient-to-r from-[#2C414D] to-[#1A2B34] py-8 border-y border-[#337C7E]/20 shadow-inner relative overflow-hidden">
+    <section className="w-full bg-gradient-to-r from-[#0F1D1B] to-[#0A1211] py-8 border-y border-white/10 shadow-inner relative overflow-hidden">
       {/* Decorative quotes marks faintly in background */}
       <div className={`${playfair.className} absolute -top-10 left-1/2 -translate-x-1/2 text-[120px] text-white/5 pointer-events-none select-none`}>
         "
