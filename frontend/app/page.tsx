@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { ArrowRight, Calendar, CreditCard, LineChart, ShieldCheck } from "lucide-react";
+import { ArrowRight, Calendar, Check, CreditCard, LineChart, ShieldCheck } from "lucide-react";
 import ScrollReveal from "@/components/ScrollReveal";
 import QuoteRotator from "@/components/QuoteRotator";
 import FaqAccordion from "@/components/FaqAccordion";
@@ -43,6 +43,7 @@ export default function Home() {
 
             <div className="hidden lg:flex items-center gap-9 text-sm text-white/60">
               <a href="#features" className="hover:text-white transition-colors">Features</a>
+              <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
               <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
             </div>
 
@@ -82,8 +83,8 @@ export default function Home() {
               </h1>
             </div>
 
-            {/* Right: description + platform preview + CTAs */}
-            <div className="px-6 md:px-10 pb-14 md:pb-16 flex flex-col justify-between opacity-0 animate-fade-in-up [animation-delay:300ms]">
+            {/* Right: description + platform preview */}
+            <div className="px-6 md:px-10 pb-14 md:pb-16 flex flex-col opacity-0 animate-fade-in-up [animation-delay:300ms]">
               <p className="text-white/55 text-[15px] leading-relaxed mb-8">
                 A booking page, client records, session notes, invoicing, and
                 analytics — everything a freelance psychologist needs to run
@@ -115,28 +116,31 @@ export default function Home() {
                   Our platform
                 </span>
               </div>
+            </div>
+          </div>
 
-              <div className="flex items-center gap-2.5 mb-5">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#5FE0C8]/10 border border-[#5FE0C8]/25 text-[#5FE0C8] text-[12px] font-semibold">
-                  14-day free trial
-                </span>
-                <span className="text-white/40 text-[13px]">then just ₹9,999/year</span>
-              </div>
+          {/* --- Trial badge + CTAs — centered across the full hero width --- */}
+          <div className="flex flex-col items-center px-6 md:px-10 pb-14 md:pb-16 opacity-0 animate-fade-in-up [animation-delay:400ms]">
+            <div className="flex items-center justify-center gap-2.5 mb-5">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#5FE0C8]/10 border border-[#5FE0C8]/25 text-[#5FE0C8] text-[12px] font-semibold">
+                14-day free trial
+              </span>
+              <span className="text-white/40 text-[13px]">then just ₹9,999/year</span>
+            </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Link
-                  href="/signup"
-                  className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-[#337C7E] text-white text-[14px] font-semibold hover:bg-[#3f9294] transition-all shadow-md"
-                >
-                  Create your free account <ArrowRight className="w-3.5 h-3.5 ml-2" />
-                </Link>
-                <Link
-                  href="/login"
-                  className="inline-flex items-center justify-center px-6 py-3 rounded-full border border-white/20 text-white/85 text-[14px] font-semibold hover:bg-white/[0.06] transition-all"
-                >
-                  Sign In
-                </Link>
-              </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center px-9 py-4 rounded-full bg-[#337C7E] text-white text-[16px] font-semibold hover:bg-[#3f9294] transition-all shadow-lg"
+              >
+                Start Free Trial <ArrowRight className="w-4 h-4 ml-2" />
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center px-9 py-4 rounded-full border border-white/20 text-white/85 text-[16px] font-semibold hover:bg-white/[0.06] transition-all"
+              >
+                Sign In
+              </Link>
             </div>
           </div>
 
@@ -186,6 +190,90 @@ export default function Home() {
               </div>
             </ScrollReveal>
           ))}
+        </div>
+      </section>
+
+      {/* --- Pricing --- */}
+      <section id="pricing" className="relative z-20 py-20 md:py-28 max-w-[1000px] mx-auto px-6 md:px-12">
+        <ScrollReveal animationClass="animate-fade-in-up">
+          <div className="text-center mb-14">
+            <h2
+              className="text-3xl md:text-5xl font-bold text-white mb-4 tracking-tight"
+              style={{ fontFamily: "var(--font-playfair), serif" }}
+            >
+              Simple, Transparent Pricing
+            </h2>
+            <p className="text-white/50 text-lg font-light">
+              One plan. No surprises. Try it free for 14 days.
+            </p>
+          </div>
+        </ScrollReveal>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {/* Trial card */}
+          <ScrollReveal delay={0} animationClass="animate-fade-in-up">
+            <div className="relative h-full bg-gradient-to-b from-white/[0.06] to-white/[0.015] border border-white/10 p-8 rounded-3xl overflow-hidden flex flex-col">
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+              <p className="text-white/60 text-sm font-semibold uppercase tracking-[0.1em] mb-3">14-Day Free Trial</p>
+              <div className="flex items-baseline gap-1.5 mb-6">
+                <span className="text-4xl font-bold text-white">₹0</span>
+                <span className="text-white/40 text-sm">/ 14 days</span>
+              </div>
+              <ul className="flex flex-col gap-3 mb-8 flex-1">
+                {[
+                  "Full access to every feature",
+                  "Your own booking page, records, invoicing & analytics",
+                  "No credit card required",
+                  "Cancel anytime, no obligation",
+                ].map(item => (
+                  <li key={item} className="flex items-start gap-2.5 text-white/70 text-sm">
+                    <Check className="w-4 h-4 text-[#5FE0C8] mt-0.5 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-full border border-white/20 text-white/85 text-[14px] font-semibold hover:bg-white/[0.06] transition-all"
+              >
+                Start Free Trial
+              </Link>
+            </div>
+          </ScrollReveal>
+
+          {/* Individual / yearly plan card */}
+          <ScrollReveal delay={120} animationClass="animate-fade-in-up">
+            <div className="relative h-full bg-gradient-to-b from-[#337C7E]/20 to-white/[0.02] border border-[#5FE0C8]/30 p-8 rounded-3xl overflow-hidden flex flex-col shadow-[0_24px_56px_-12px_rgba(51,124,126,0.35)]">
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#5FE0C8]/50 to-transparent" />
+              <span className="absolute top-6 right-6 px-3 py-1 rounded-full bg-[#5FE0C8]/15 border border-[#5FE0C8]/30 text-[#5FE0C8] text-[10px] font-bold uppercase tracking-[0.1em]">
+                Recommended
+              </span>
+              <p className="text-white/60 text-sm font-semibold uppercase tracking-[0.1em] mb-3">Individual</p>
+              <div className="flex items-baseline gap-1.5 mb-6">
+                <span className="text-4xl font-bold text-white">₹9,999</span>
+                <span className="text-white/40 text-sm">/ year</span>
+              </div>
+              <ul className="flex flex-col gap-3 mb-8 flex-1">
+                {[
+                  "Everything in the free trial",
+                  "Unlimited patients & appointments",
+                  "Pay easily via GPay / UPI",
+                  "Priority email support",
+                ].map(item => (
+                  <li key={item} className="flex items-start gap-2.5 text-white/70 text-sm">
+                    <Check className="w-4 h-4 text-[#5FE0C8] mt-0.5 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-[#337C7E] text-white text-[14px] font-semibold hover:bg-[#3f9294] transition-all shadow-md"
+              >
+                Get Started <ArrowRight className="w-3.5 h-3.5 ml-2" />
+              </Link>
+            </div>
+          </ScrollReveal>
         </div>
       </section>
 
