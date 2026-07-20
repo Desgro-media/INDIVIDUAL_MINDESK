@@ -39,57 +39,67 @@ export default function SignupPage() {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div
+      className="relative min-h-screen flex flex-col overflow-hidden bg-[#0A1211] text-white"
+      style={{ fontFamily: "var(--font-jakarta), sans-serif" }}
+    >
+      <div
+        className="absolute inset-0 z-0 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 55% at 20% 0%, rgba(51,124,126,0.35) 0%, transparent 60%), radial-gradient(ellipse 50% 45% at 100% 20%, rgba(128,117,196,0.20) 0%, transparent 65%)",
+        }}
+      ></div>
 
       {/* Minimal Nav */}
-      <nav style={{ padding: "20px 28px", position: "absolute", top: 0, left: 0, right: 0 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-          <div className="btn-nm" style={{ width: 36, height: 36, borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <ArrowLeft style={{ width: 15, height: 15, color: "var(--text-2)" }} />
+      <nav className="relative z-10 px-7 py-5">
+        <Link href="/" className="inline-flex items-center gap-2 text-white/60 hover:text-white transition-colors">
+          <div className="w-9 h-9 rounded-full border border-white/15 bg-white/[0.04] flex items-center justify-center">
+            <ArrowLeft className="w-3.5 h-3.5" />
           </div>
-          <span style={{ fontSize: 13, color: "var(--text-2)", fontWeight: 500 }}>Back to Site</span>
+          <span className="text-[13px] font-medium">Back to Site</span>
         </Link>
       </nav>
 
       {/* Main Content */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="relative z-10 flex-1 flex items-center justify-center px-5 py-10">
+        <div className="w-full max-w-[420px] rounded-[28px] border border-white/10 bg-white/[0.03] backdrop-blur-xl px-9 py-12 shadow-2xl shadow-black/40 anim-scale-in">
 
-        <div className="nm-raised-lg anim-scale-in" style={{ borderRadius: 28, padding: "48px 36px", width: "100%", maxWidth: 420 }}>
-
-          <div style={{ textAlign: "center", marginBottom: 36 }}>
-            <div className="nm-raised" style={{ width: 64, height: 64, borderRadius: "50%", margin: "0 auto 20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div className="nm-inset" style={{ width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Activity style={{ width: 20, height: 20, color: "var(--accent)" }} />
+          <div className="text-center mb-9">
+            <div className="w-16 h-16 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center mx-auto mb-5">
+              <div className="w-11 h-11 rounded-full bg-[#337C7E]/15 flex items-center justify-center">
+                <Activity className="w-5 h-5 text-[#5FE0C8]" />
               </div>
             </div>
 
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-1)", marginBottom: 8 }}>
+            <h1
+              className="text-2xl font-bold text-white mb-2"
+              style={{ fontFamily: "var(--font-playfair), serif" }}
+            >
               Create Your Account
             </h1>
-            <p style={{ fontSize: 14, color: "var(--text-2)" }}>
+            <p className="text-sm text-white/50">
               Set up your own practice dashboard and booking link
             </p>
           </div>
 
           {error && (
-            <div className="anim-fade-in nm-inset-sm" style={{ borderRadius: 12, padding: "12px 16px", marginBottom: 24, color: "var(--danger)", fontSize: 13, textAlign: "center" }}>
+            <div className="anim-fade-in rounded-xl border border-[#fb4b6e]/25 bg-[#fb4b6e]/10 px-4 py-3 mb-6 text-[#ff8fa3] text-[13px] text-center">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSignup} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <form onSubmit={handleSignup} className="flex flex-col gap-5">
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-[0.08em] mb-2">
                 Full Name
               </label>
-              <div style={{ position: "relative" }}>
-                <div style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", pointerEvents: "none" }}>
-                  <User style={{ width: 14, height: 14 }} />
-                </div>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/35 pointer-events-none" />
                 <input
                   type="text"
-                  className="nm-input"
+                  className="w-full rounded-xl border border-white/12 bg-white/[0.04] pl-11 pr-4 py-3.5 text-[14px] text-white placeholder:text-white/30 outline-none transition-colors focus:border-[#337C7E] focus:bg-white/[0.06]"
                   placeholder="Dr. Jane Doe"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -100,16 +110,14 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-[0.08em] mb-2">
                 Email
               </label>
-              <div style={{ position: "relative" }}>
-                <div style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", pointerEvents: "none" }}>
-                  <Mail style={{ width: 14, height: 14 }} />
-                </div>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/35 pointer-events-none" />
                 <input
                   type="email"
-                  className="nm-input"
+                  className="w-full rounded-xl border border-white/12 bg-white/[0.04] pl-11 pr-4 py-3.5 text-[14px] text-white placeholder:text-white/30 outline-none transition-colors focus:border-[#337C7E] focus:bg-white/[0.06]"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -120,16 +128,14 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
+              <label className="block text-[11px] font-semibold text-white/40 uppercase tracking-[0.08em] mb-2">
                 Password
               </label>
-              <div style={{ position: "relative" }}>
-                <div style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--text-3)", pointerEvents: "none" }}>
-                  <Lock style={{ width: 14, height: 14 }} />
-                </div>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/35 pointer-events-none" />
                 <input
                   type="password"
-                  className="nm-input"
+                  className="w-full rounded-xl border border-white/12 bg-white/[0.04] pl-11 pr-4 py-3.5 text-[14px] text-white placeholder:text-white/30 outline-none transition-colors focus:border-[#337C7E] focus:bg-white/[0.06]"
                   placeholder="At least 8 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -141,20 +147,19 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              className="btn-nm-accent"
               disabled={loading || !name || !email || !password}
-              style={{ width: "100%", marginTop: 12 }}
+              className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#337C7E] py-3.5 text-[14px] font-semibold text-white transition-all hover:bg-[#3f9294] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? "Creating account..." : (
-                <><UserPlus style={{ width: 16, height: 16 }} /> Create Account</>
+                <><UserPlus className="w-4 h-4" /> Create Account</>
               )}
             </button>
 
           </form>
 
-          <p style={{ textAlign: "center", fontSize: 13, color: "var(--text-3)", marginTop: 24 }}>
+          <p className="text-center text-[13px] text-white/40 mt-7">
             Already have an account?{" "}
-            <Link href="/login" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>
+            <Link href="/login" className="text-[#5FE0C8] font-semibold hover:text-white transition-colors">
               Sign in
             </Link>
           </p>
