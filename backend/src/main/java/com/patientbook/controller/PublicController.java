@@ -114,7 +114,7 @@ public class PublicController {
     }
 
     private AppUser resolveOwner(String slug) {
-        return appUserRepository.findBySlug(slug)
+        return appUserRepository.findBySlugAndRole(slug, com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
     }
 

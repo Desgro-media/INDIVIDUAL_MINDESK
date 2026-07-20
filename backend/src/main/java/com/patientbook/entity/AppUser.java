@@ -7,10 +7,11 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
-// One row = one independent freelance psychologist account (a tenant). Every
-// other table hangs a "psychologistId" off this id and every query is scoped
-// to the caller's own id — there is no admin/staff role that can see across
-// accounts.
+// One row = one independent freelance psychologist account (a tenant), OR the
+// single seeded superadmin account (see role field / StartupInitializer).
+// Every other table hangs a "psychologistId" off a tenant's id and every
+// tenant-facing query is scoped to the caller's own id; only the superadmin
+// role can see across accounts, and only through /api/v1/superadmin/**.
 @Entity
 @Table(name = "app_user")
 @Data
@@ -30,12 +31,13 @@ public class AppUser {
     @Column(nullable = false)
     private String password;
 
-    // Vestigial: every account is the same kind of user (no admin/staff roles
-    // exist in this app), kept only so @PreAuthorize("isAuthenticated()") and
-    // UserDetailsServiceImpl's GrantedAuthority plumbing don't need touching.
+    // ROLE_PSYCHOLOGIST (every tenant, default) or ROLE_SUPERADMIN (the single
+    // seeded platform-owner account — see StartupInitializer). Drives both
+    // Spring Security's GrantedAuthority (UserDetailsServiceImpl) and
+    // URL-level rules in SecurityConfig. See com.patientbook.security.Roles.
     @Column(nullable = false)
     @Builder.Default
-    private String role = "ROLE_PSYCHOLOGIST";
+    private String role = com.patientbook.security.Roles.PSYCHOLOGIST;
 
     private String name;
 

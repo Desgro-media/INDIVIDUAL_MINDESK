@@ -18,4 +18,5 @@ public class AuthResponse {
     private String name;
     private String slug;
     private String jobTitle;
+    private String role;
 }
