@@ -9,6 +9,7 @@ import {
   Search, ArrowDownUp, AlertCircle, Phone, Mail, Check,
   Download, Plus, BrainCircuit, TrendingUp, Star,
   Lock, Pencil, Save, Trash2, DollarSign, Smile, X, RefreshCw,
+  Paperclip, Loader2, UploadCloud,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -196,6 +197,25 @@ type Invoice     = { id: number; appointmentId: number; status: string; amount: 
 type AppointmentWithJourney = Appointment & { previousAppointmentId?: number | null; returningPatient?: boolean; };
 type MoodLog     = { id: number; appointmentId?: number; moodScore: number; logDate: string; note?: string; };
 type BankAccount = { id: number; accountName: string; bankName: string; accountNumber?: string; ifscCode?: string; upiId?: string; isDefault: boolean; active: boolean; };
+type Attachment  = { id: number; patientId: number; fileName: string; fileType: string; fileSize: number; uploadedAt: string; };
+
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB — mirrors the backend's PatientAttachmentService cap
+const ALLOWED_ATTACHMENT_EXTENSIONS = ["pdf", "png", "jpg", "jpeg", "gif", "webp", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv"];
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 const STATUS_CFG: Record<string, { label: string; textColor: string; icon: React.ReactNode }> = {
   AWAITING_PAYMENT:     { label: "Awaiting Payment", textColor: "#f59e0b", icon: <Hourglass className="w-4 h-4" /> },
@@ -283,6 +303,13 @@ export default function ClientTimelinePage() {
 
   // Bank accounts (fetched on mount)
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+
+  // File attachments
+  const [attachments, setAttachments]     = useState<Attachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<number | null>(null);
+  const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<number | null>(null);
 
   // Schedule modal: bank account
   const [schedBankAccountId, setSchedBankAccountId] = useState<number | "">("");
@@ -546,8 +573,9 @@ export default function ClientTimelinePage() {
       api.get(`/invoices/patient/${params.id}`),
       api.get(`/mood/patient/${params.id}`),
       api.get(`/bank-accounts`),
+      api.get(`/patients/${params.id}/attachments`),
     ])
-    .then(([pRes, aRes, sRes, nRes, invRes, moodRes, bankRes]) => {
+    .then(([pRes, aRes, sRes, nRes, invRes, moodRes, bankRes, attRes]) => {
       if (pRes.status === "fulfilled") setPatient(pRes.value.data);
       if (aRes.status === "fulfilled") setAppointments(aRes.value.data);
       if (sRes.status === "fulfilled") setServices(sRes.value.data);
@@ -555,10 +583,77 @@ export default function ClientTimelinePage() {
       if (invRes.status === "fulfilled") setInvoices(Object.fromEntries(invRes.value.data.map((inv: Invoice) => [inv.appointmentId, inv])));
       if (moodRes.status === "fulfilled") setMoodLogs(moodRes.value.data);
       if (bankRes.status === "fulfilled") setBankAccounts((bankRes.value.data ?? []).filter((b: BankAccount) => b.active));
+      if (attRes.status === "fulfilled") setAttachments(attRes.value.data);
     })
     .catch(console.error)
     .finally(() => setLoading(false));
   }, [params.id]);
+
+  const handleUploadAttachment = async (file: File) => {
+    if (!patient) return;
+    setAttachmentError("");
+
+    const extension = file.name.includes(".") ? file.name.split(".").pop()!.toLowerCase() : "";
+    if (!extension || !ALLOWED_ATTACHMENT_EXTENSIONS.includes(extension)) {
+      setAttachmentError("Unsupported file type. Allowed: PDF, Word, Excel, PowerPoint, images, and text/CSV files.");
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setAttachmentError("File exceeds the 10MB size limit.");
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const fileData = await fileToDataUrl(file);
+      const res = await api.post(`/patients/${patient.id}/attachments`, {
+        fileName: file.name,
+        fileData,
+      });
+      setAttachments(prev => [res.data, ...prev]);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message;
+      setAttachmentError(msg?.trim() ? msg : "Failed to upload file.");
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const handleDownloadAttachment = async (attachment: Attachment) => {
+    if (!patient) return;
+    setDownloadingAttachmentId(attachment.id);
+    try {
+      const res = await api.get(`/patients/${patient.id}/attachments/${attachment.id}/download`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = attachment.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to download attachment.");
+    } finally {
+      setDownloadingAttachmentId(null);
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId: number) => {
+    if (!patient) return;
+    if (!confirm("Delete this attachment? This cannot be undone.")) return;
+    setDeletingAttachmentId(attachmentId);
+    try {
+      await api.delete(`/patients/${patient.id}/attachments/${attachmentId}`);
+      setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete attachment.");
+    } finally {
+      setDeletingAttachmentId(null);
+    }
+  };
 
   // Metrics calculation
   const metrics = useMemo(() => {
@@ -860,6 +955,78 @@ export default function ClientTimelinePage() {
 
             </div>
           </SpotlightDiv>
+
+          {/* Attachments Card */}
+          <div className="soft-card" style={{ borderRadius: 24, padding: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-1)", display: "flex", alignItems: "center", gap: 8 }}>
+                <Paperclip style={{ width: 16, height: 16, color: "var(--accent)" }} /> Attachments
+              </h3>
+              <label className="btn-nm" style={{ padding: "7px 14px", gap: 6, fontWeight: 600, fontSize: 12, color: "var(--accent)", cursor: uploadingFile ? "default" : "pointer" }}>
+                {uploadingFile ? (
+                  <Loader2 style={{ width: 13, height: 13, animation: "spinSlow 1s linear infinite" }} />
+                ) : (
+                  <UploadCloud style={{ width: 13, height: 13 }} />
+                )}
+                {uploadingFile ? "Uploading..." : "Upload"}
+                <input
+                  type="file"
+                  style={{ display: "none" }}
+                  disabled={uploadingFile}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) handleUploadAttachment(file);
+                  }}
+                />
+              </label>
+            </div>
+
+            {attachmentError && (
+              <p style={{ fontSize: 12, color: "var(--danger)", marginBottom: 12 }}>{attachmentError}</p>
+            )}
+
+            {attachments.length === 0 ? (
+              <p style={{ fontSize: 13, color: "var(--text-3)", fontStyle: "italic" }}>No files attached yet.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {attachments.map(att => (
+                  <div key={att.id} className="soft-card-2" style={{ borderRadius: 14, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <FileText style={{ width: 16, height: 16, color: "var(--accent)", flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p title={att.fileName} style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {att.fileName}
+                      </p>
+                      <p style={{ fontSize: 11, color: "var(--text-3)" }}>
+                        {formatFileSize(att.fileSize)} · {new Date(att.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDownloadAttachment(att)}
+                      disabled={downloadingAttachmentId === att.id}
+                      className="icon-btn"
+                      title="Download"
+                    >
+                      {downloadingAttachmentId === att.id
+                        ? <Loader2 style={{ width: 14, height: 14, animation: "spinSlow 1s linear infinite" }} />
+                        : <Download style={{ width: 14, height: 14 }} />}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteAttachment(att.id)}
+                      disabled={deletingAttachmentId === att.id}
+                      className="icon-btn"
+                      title="Delete"
+                      style={{ color: "var(--danger)" }}
+                    >
+                      {deletingAttachmentId === att.id
+                        ? <Loader2 style={{ width: 14, height: 14, animation: "spinSlow 1s linear infinite" }} />
+                        : <Trash2 style={{ width: 14, height: 14 }} />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Metrics Card */}
           {metrics && (

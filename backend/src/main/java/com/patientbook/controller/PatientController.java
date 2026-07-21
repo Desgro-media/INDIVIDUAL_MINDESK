@@ -1,15 +1,22 @@
 package com.patientbook.controller;
 
 import com.patientbook.entity.Patient;
+import com.patientbook.entity.PatientAttachment;
 import com.patientbook.dto.AppointmentDto;
+import com.patientbook.dto.PatientAttachmentDto;
 import com.patientbook.security.CurrentUserProvider;
 import com.patientbook.service.PatientService;
+import com.patientbook.service.PatientAttachmentService;
 import com.patientbook.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +27,7 @@ public class PatientController {
 
     private final PatientService patientService;
     private final AppointmentService appointmentService;
+    private final PatientAttachmentService patientAttachmentService;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
@@ -74,6 +82,49 @@ public class PatientController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deletePatient(@PathVariable Long id) {
         patientService.deletePatient(id, currentUserProvider.getCurrentUserId());
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── File Attachments ────────────────────────────────────────────────────
+
+    // Body: { "fileName": "...", "fileData": "data:<mime>;base64,...." }
+    // (same FileReader.readAsDataURL convention as every other upload in this app)
+    @PostMapping("/{id}/attachments")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PatientAttachmentDto> uploadAttachment(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body) {
+        String fileName = body.get("fileName") != null ? body.get("fileName").toString() : null;
+        String fileData = body.get("fileData") != null ? body.get("fileData").toString() : null;
+        return ResponseEntity.ok(patientAttachmentService.uploadAttachment(
+                id, currentUserProvider.getCurrentUserId(), fileName, fileData));
+    }
+
+    @GetMapping("/{id}/attachments")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<PatientAttachmentDto>> getAttachments(@PathVariable Long id) {
+        return ResponseEntity.ok(patientAttachmentService.getAttachments(id, currentUserProvider.getCurrentUserId()));
+    }
+
+    @GetMapping("/{id}/attachments/{attachmentId}/download")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<byte[]> downloadAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
+        PatientAttachment attachment = patientAttachmentService.getAttachmentForDownload(
+                id, attachmentId, currentUserProvider.getCurrentUserId());
+        byte[] fileBytes = Base64.getDecoder().decode(attachment.getFileData());
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename(attachment.getFileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(attachment.getFileType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(fileBytes);
+    }
+
+    @DeleteMapping("/{id}/attachments/{attachmentId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
+        patientAttachmentService.deleteAttachment(id, attachmentId, currentUserProvider.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
 }

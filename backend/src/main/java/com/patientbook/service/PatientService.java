@@ -11,6 +11,7 @@ import com.patientbook.repository.AppointmentRepository;
 import com.patientbook.repository.InvoiceRepository;
 import com.patientbook.repository.MoodLogRepository;
 import com.patientbook.repository.NotificationLogRepository;
+import com.patientbook.repository.PatientAttachmentRepository;
 import com.patientbook.repository.SessionNoteRepository;
 
 import java.time.LocalDateTime;
@@ -26,6 +27,7 @@ public class PatientService {
     private final MoodLogRepository moodLogRepository;
     private final SessionNoteRepository sessionNoteRepository;
     private final NotificationLogRepository notificationLogRepository;
+    private final PatientAttachmentRepository patientAttachmentRepository;
 
     public List<Patient> getAllPatients(Long ownerId) {
         return patientRepository.findByPrimaryPsychologistId(ownerId);
@@ -80,6 +82,7 @@ public class PatientService {
         invoiceRepository.deleteByPatientId(id);
         moodLogRepository.deleteByPatientId(id);
         sessionNoteRepository.deleteByPatientId(id);
+        patientAttachmentRepository.deleteByPatientId(id);
         appointmentRepository.deleteByPatientId(id);
 
         patientRepository.delete(patient);
