@@ -71,7 +71,7 @@ const TABS: Tab[] = [
     icon: Wallet,
     heading: "Get paid, right on time",
     desc: "Know exactly what's owed to you before it becomes a problem — outstanding balances and invoice status, always visible.",
-    bullets: ["₹37,000 outstanding, flagged instantly", "17 unpaid invoices tracked automatically", "Mark paid or waive in one click"],
+    bullets: ["Outstanding balances flagged instantly", "Unpaid invoices tracked automatically", "Mark paid or waive in one click"],
     cta: "Explore Payments",
     image: "/screens/billing.png",
     alt: "Mindesk payments tracking",
