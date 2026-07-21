@@ -34,15 +34,15 @@ export default function QuoteRotator() {
   }, [index]);
 
   return (
-    <section className="w-full bg-gradient-to-r from-[#0F1D1B] to-[#0A1211] py-8 border-y border-white/10 shadow-inner relative overflow-hidden">
+    <section className="w-full bg-gradient-to-r from-[#F2F4FF] to-[#F5F0FF] py-8 border-y border-[#E4E8FF] shadow-inner relative overflow-hidden">
       {/* Decorative quotes marks faintly in background */}
-      <div className={`${playfair.className} absolute -top-10 left-1/2 -translate-x-1/2 text-[120px] text-white/5 pointer-events-none select-none`}>
+      <div className={`${playfair.className} absolute -top-10 left-1/2 -translate-x-1/2 text-[120px] text-[#4f6ef7]/[0.07] pointer-events-none select-none`}>
         "
       </div>
-      
+
       <div className="max-w-4xl mx-auto px-6 text-center min-h-[3.5rem] flex items-center justify-center relative z-10">
-        <p 
-          className={`${playfair.className} text-white/90 text-xl md:text-2xl font-light tracking-wide transition-all duration-500 transform ${fade ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95'}`}
+        <p
+          className={`${playfair.className} text-[#1b2048]/85 text-xl md:text-2xl font-light tracking-wide transition-all duration-500 transform ${fade ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95'}`}
         >
           "{QUOTES[index]}"
         </p>

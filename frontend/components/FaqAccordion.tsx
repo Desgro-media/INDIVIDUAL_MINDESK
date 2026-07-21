@@ -25,12 +25,12 @@ export default function FaqAccordion({ items }: { items: FaqItem[] }) {
             key={item.q}
             className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden ${
               isOpen
-                ? "border-[#5FE0C8]/30 bg-white/[0.06] shadow-[0_16px_40px_rgba(51,124,126,0.16)]"
-                : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.045]"
+                ? "border-[#4f6ef7]/30 bg-white shadow-[0_16px_40px_rgba(79,110,247,0.14)]"
+                : "border-[#E4E8FF] bg-white hover:border-[#4f6ef7]/25 hover:shadow-[0_8px_24px_rgba(80,110,200,0.08)]"
             }`}
           >
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 transition-opacity duration-300"
+              className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#4f6ef7]/25 to-transparent opacity-0 transition-opacity duration-300"
               style={{ opacity: isOpen ? 1 : 0 }}
             />
             <button
@@ -41,25 +41,25 @@ export default function FaqAccordion({ items }: { items: FaqItem[] }) {
               <span
                 className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold tabular-nums border transition-colors duration-300 ${
                   isOpen
-                    ? "border-[#5FE0C8]/40 bg-[#337C7E]/20 text-[#5FE0C8]"
-                    : "border-white/15 text-white/35 group-hover:text-white/55 group-hover:border-white/25"
+                    ? "border-[#4f6ef7]/40 bg-[#4f6ef7]/10 text-[#4f6ef7]"
+                    : "border-[#D6DCFA] text-[#8a90bc] group-hover:text-[#4a5282] group-hover:border-[#4f6ef7]/30"
                 }`}
               >
                 {String(i + 1).padStart(2, "0")}
               </span>
 
-              <span className="flex-1 font-semibold text-white text-[17px] md:text-lg">
+              <span className="flex-1 font-semibold text-[#1b2048] text-[17px] md:text-lg">
                 {item.q}
               </span>
 
               <span
                 className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center border transition-all duration-300 ${
                   isOpen
-                    ? "border-[#5FE0C8]/40 bg-[#337C7E]/20 rotate-45"
-                    : "border-white/15 text-white/50 group-hover:border-white/25 group-hover:text-white/80"
+                    ? "border-[#4f6ef7]/40 bg-[#4f6ef7]/10 rotate-45"
+                    : "border-[#D6DCFA] text-[#8a90bc] group-hover:border-[#4f6ef7]/30 group-hover:text-[#4a5282]"
                 }`}
               >
-                <Plus className={`w-4 h-4 ${isOpen ? "text-[#5FE0C8]" : ""}`} />
+                <Plus className={`w-4 h-4 ${isOpen ? "text-[#4f6ef7]" : ""}`} />
               </span>
             </button>
 
@@ -69,7 +69,7 @@ export default function FaqAccordion({ items }: { items: FaqItem[] }) {
             >
               <div className="overflow-hidden">
                 <div className="pl-[68px] md:pl-[80px] pr-6 md:pr-8 pb-7 md:pb-8">
-                  <p className="text-white/55 leading-relaxed text-[15px] md:text-base">
+                  <p className="text-[#4a5282] leading-relaxed text-[15px] md:text-base">
                     {item.a}
                   </p>
                 </div>
