@@ -20,7 +20,7 @@ export default function Home() {
           className="absolute inset-0 z-0 pointer-events-none"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(27,32,72,0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(27,32,72,0.09) 1px, transparent 1px)",
+              "linear-gradient(rgba(27,32,72,0.19) 1px, transparent 1px), linear-gradient(90deg, rgba(27,32,72,0.19) 1px, transparent 1px)",
             backgroundSize: "56px 56px",
           }}
         ></div>
@@ -69,34 +69,28 @@ export default function Home() {
           </nav>
 
           {/* --- Hero Content --- */}
-          <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-10 lg:gap-6">
-            {/* Left: eyebrow + giant wordmark */}
-            <div className="px-6 md:px-10 pt-10 pb-4 md:pt-16 md:pb-10 opacity-0 animate-fade-in-up [animation-delay:100ms]">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#4f6ef7]/15 bg-[#4f6ef7]/[0.05] text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4a5282] mb-8">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#EA5790]"></span>
-                For independent psychologists
-              </div>
-
-              <p
-                className="text-2xl md:text-3xl text-[#4a5282] font-medium mb-1"
-                style={{ fontFamily: "var(--font-playfair), serif" }}
-              >
-                Run your practice,
-              </p>
-              <h1 className="text-[clamp(3.2rem,11vw,9.5rem)] leading-[0.86] font-bold text-[#1b2048] tracking-tight -ml-1">
-                Mindesk
-              </h1>
+          <div className="px-6 md:px-10 pt-10 pb-14 md:pt-16 md:pb-16 opacity-0 animate-fade-in-up [animation-delay:100ms]">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#4f6ef7]/15 bg-[#4f6ef7]/[0.05] text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4a5282] mb-8">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#EA5790]"></span>
+              For independent psychologists
             </div>
 
-            {/* Right: description */}
-            <div className="px-6 md:px-10 pb-14 md:pb-16 flex flex-col justify-center opacity-0 animate-fade-in-up [animation-delay:300ms]">
-              <p className="text-[#4a5282] text-[15px] leading-relaxed mb-0">
-                A booking page, client records, session notes, invoicing, and
-                analytics — everything a freelance psychologist needs to run
-                their practice solo, with no clinic, no staff, and no admin
-                overhead.
-              </p>
-            </div>
+            <p
+              className="text-2xl md:text-3xl text-[#4a5282] font-medium mb-1"
+              style={{ fontFamily: "var(--font-playfair), serif" }}
+            >
+              Run your practice,
+            </p>
+            <h1 className="text-[clamp(3.2rem,11vw,9.5rem)] leading-[0.86] font-bold text-[#1b2048] tracking-tight -ml-1">
+              Mindesk
+            </h1>
+
+            <p className="text-[#4a5282] text-[15px] leading-relaxed max-w-xl mt-6 opacity-0 animate-fade-in-up [animation-delay:300ms]">
+              A booking page, client records, session notes, invoicing, and
+              analytics — everything a freelance psychologist needs to run
+              their practice solo, with no clinic, no staff, and no admin
+              overhead.
+            </p>
           </div>
 
           {/* --- Trial badge + CTAs — centered across the full hero width --- */}
