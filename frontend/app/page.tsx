@@ -4,6 +4,8 @@ import { ArrowRight, Calendar, Check, CreditCard, LineChart, ShieldCheck } from 
 import ScrollReveal from "@/components/ScrollReveal";
 import QuoteRotator from "@/components/QuoteRotator";
 import FaqAccordion from "@/components/FaqAccordion";
+import SolutionsShowcase from "@/components/SolutionsShowcase";
+import HeroSlideshow from "@/components/HeroSlideshow";
 
 export default function Home() {
   return (
@@ -86,39 +88,14 @@ export default function Home() {
               </h1>
             </div>
 
-            {/* Right: description + platform preview */}
-            <div className="px-6 md:px-10 pb-14 md:pb-16 flex flex-col opacity-0 animate-fade-in-up [animation-delay:300ms]">
-              <p className="text-[#4a5282] text-[15px] leading-relaxed mb-8">
+            {/* Right: description */}
+            <div className="px-6 md:px-10 pb-14 md:pb-16 flex flex-col justify-center opacity-0 animate-fade-in-up [animation-delay:300ms]">
+              <p className="text-[#4a5282] text-[15px] leading-relaxed mb-0">
                 A booking page, client records, session notes, invoicing, and
                 analytics — everything a freelance psychologist needs to run
                 their practice solo, with no clinic, no staff, and no admin
                 overhead.
               </p>
-
-              {/* Platform preview collage — hover to bring a screen forward */}
-              <div className="relative h-[170px] sm:h-[190px] mb-10 select-none">
-                <img
-                  src="/screens/overview.png"
-                  alt="Mindesk dashboard overview"
-                  tabIndex={0}
-                  className="absolute top-0 left-0 z-10 w-[52%] sm:w-[48%] rounded-xl border border-[#D6DCFA] shadow-2xl shadow-slate-400/30 -rotate-[5deg] cursor-pointer transition-all duration-300 ease-out hover:z-30 focus-visible:z-30 hover:-translate-y-3 focus-visible:-translate-y-3 hover:rotate-0 focus-visible:rotate-0 hover:scale-110 focus-visible:scale-110 hover:shadow-[0_24px_60px_rgba(80,110,200,0.35)] outline-none focus-visible:ring-2 focus-visible:ring-[#4f6ef7]"
-                />
-                <img
-                  src="/screens/analytics.png"
-                  alt="Mindesk analytics dashboard"
-                  tabIndex={0}
-                  className="absolute top-8 left-[26%] sm:left-[24%] z-20 w-[52%] sm:w-[48%] rounded-xl border border-[#D6DCFA] shadow-2xl shadow-slate-400/30 rotate-[2deg] cursor-pointer transition-all duration-300 ease-out hover:z-30 focus-visible:z-30 hover:-translate-y-3 focus-visible:-translate-y-3 hover:rotate-0 focus-visible:rotate-0 hover:scale-110 focus-visible:scale-110 hover:shadow-[0_24px_60px_rgba(80,110,200,0.35)] outline-none focus-visible:ring-2 focus-visible:ring-[#4f6ef7]"
-                />
-                <img
-                  src="/screens/billing.png"
-                  alt="Mindesk billing dashboard"
-                  tabIndex={0}
-                  className="absolute top-2 left-[50%] sm:left-[46%] z-10 w-[52%] sm:w-[48%] rounded-xl border border-[#D6DCFA] shadow-2xl shadow-slate-400/30 rotate-[6deg] hidden sm:block cursor-pointer transition-all duration-300 ease-out hover:z-30 focus-visible:z-30 hover:-translate-y-3 focus-visible:-translate-y-3 hover:rotate-0 focus-visible:rotate-0 hover:scale-110 focus-visible:scale-110 hover:shadow-[0_24px_60px_rgba(80,110,200,0.35)] outline-none focus-visible:ring-2 focus-visible:ring-[#4f6ef7]"
-                />
-                <span className="absolute bottom-0 right-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8a90bc] pointer-events-none">
-                  Our platform
-                </span>
-              </div>
             </div>
           </div>
 
@@ -147,8 +124,13 @@ export default function Home() {
             </div>
           </div>
 
+          {/* --- Big screenshot slideshow --- */}
+          <div className="px-6 md:px-10 pb-14 md:pb-20 opacity-0 animate-fade-in-up [animation-delay:450ms]">
+            <HeroSlideshow />
+          </div>
+
           {/* --- Feature strip --- */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-8 px-6 md:px-10 pb-14 md:pb-20 opacity-0 animate-fade-in-up [animation-delay:450ms]">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-8 px-6 md:px-10 pb-14 md:pb-20 opacity-0 animate-fade-in-up [animation-delay:550ms]">
             {[
               { icon: Calendar, label: "Booking" },
               { icon: ShieldCheck, label: "Records" },
@@ -195,6 +177,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <SolutionsShowcase />
 
       {/* --- Pricing --- */}
       <section id="pricing" className="relative z-20 py-20 md:py-28 max-w-[1000px] mx-auto px-6 md:px-12">
