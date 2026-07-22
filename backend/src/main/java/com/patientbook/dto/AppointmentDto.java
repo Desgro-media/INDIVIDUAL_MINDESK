@@ -33,4 +33,6 @@ public class AppointmentDto {
     private Long psychologistId;
     private String psychologistName;
     private String psychologistSlug; // used to link back to the practitioner's public booking page
+    private Long assignedDoctorId;   // which specific practitioner this appointment is with
+    private String assignedDoctorName;
 }

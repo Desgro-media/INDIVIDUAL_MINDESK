@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard, Calendar, Users, Settings, Sparkles,
   LogOut, Activity, Menu, X, Bell, BarChart, Receipt, Search, ShieldCheck,
+  UserCog,
 } from "lucide-react";
 import ThemeToggle from "../../components/ThemeToggle";
 import api from "../../lib/api";
@@ -213,6 +214,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [user, pathname, router]);
 
   const handleLogout = async () => {
+    // Best-effort — records a real logout time for clinic staff attendance
+    // (see StaffAttendanceService). If it fails (offline, expired token),
+    // the session is still cleared locally; a stray "still active" row just
+    // means an admin sees a slightly stale attendance record, not a stuck login.
+    try { await api.post("/auth/logout"); } catch {}
     clearSession();
     router.push("/login");
   };
@@ -224,6 +230,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (isMobile) setSidebar(false);
   };
 
+  // A clinic's tenant-root account (accountType CLINIC, no tenantId of its
+  // own) manages staff; a clinic STAFF login (tenantId set) is instead
+  // gated by its granted permissions — mirrors the backend's
+  // StaffPermissionFilter exactly, so a staff member never sees a link that
+  // would just 403 when clicked. Individuals and superadmin-adjacent tenant
+  // roots are unaffected either way (isStaff stays false).
+  // user is null during the initial (pre-hydration) render — see the
+  // `if (!user) return ...` guard below — so every access here must
+  // tolerate that rather than throwing during prerendering.
+  const isClinicOwner = user?.accountType === "CLINIC" && !user?.tenantId;
+  const isStaff = !!user?.tenantId;
+  const staffPermissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
+  const isStaffDoctor = isStaff && user?.role === "ROLE_PSYCHOLOGIST";
+
+  const hasPermission = (permission: string) => {
+    if (!isStaff) return true; // tenant roots always have full access
+    if (isStaffDoctor && (permission === "APPOINTMENTS" || permission === "PATIENTS")) return true;
+    return staffPermissions.includes(permission);
+  };
+
   // Locked (trial/subscription lapsed) accounts only see the Subscription
   // page — everything else 404s at the API layer anyway (SubscriptionAccessFilter),
   // so there's no point showing nav links that would just bounce back here.
@@ -232,13 +258,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ? [{ label: "Subscription", icon: ShieldCheck, path: "/dashboard/subscription", group: "Account", badge: subscriptionBadge }]
     : [
         { label: "Overview",      icon: LayoutDashboard, path: "/dashboard",              group: "Workspace" },
-        { label: "Analytics",     icon: BarChart,        path: "/dashboard/analytics",    group: "Workspace" },
-        { label: "Appointments",  icon: Calendar,        path: "/dashboard/appointments", group: "Manage",    badge: pendingCount },
-        { label: "Patients",      icon: Users,           path: "/dashboard/patients",     group: "Manage" },
-        { label: "Billing",       icon: Receipt,         path: "/dashboard/billing",      group: "Manage" },
-        { label: "Services",      icon: Sparkles,        path: "/dashboard/services",     group: "Manage" },
-        { label: "Settings",      icon: Settings,        path: "/dashboard/settings",     group: "System" },
-        { label: "Subscription",  icon: ShieldCheck,     path: "/dashboard/subscription", group: "System", badge: subscriptionBadge },
+        ...(hasPermission("ANALYTICS") ? [{ label: "Analytics", icon: BarChart, path: "/dashboard/analytics", group: "Workspace" }] : []),
+        ...(hasPermission("APPOINTMENTS") ? [{ label: "Appointments", icon: Calendar, path: "/dashboard/appointments", group: "Manage", badge: pendingCount }] : []),
+        ...(hasPermission("PATIENTS") ? [{ label: "Patients", icon: Users, path: "/dashboard/patients", group: "Manage" }] : []),
+        ...(hasPermission("BILLING") ? [{ label: "Billing", icon: Receipt, path: "/dashboard/billing", group: "Manage" }] : []),
+        ...(hasPermission("SETTINGS") ? [{ label: "Services", icon: Sparkles, path: "/dashboard/services", group: "Manage" }] : []),
+        ...(isClinicOwner ? [{ label: "Staff", icon: UserCog, path: "/dashboard/staff", group: "Manage" }] : []),
+        // A staff-doctor needs the Settings page even without the SETTINGS
+        // permission — it's the only UI for their own bio/services/
+        // availability (the /me/** endpoints, self-scoped by construction).
+        // The page itself hides the clinic-wide tabs (Practice/Payment/
+        // Holidays) unless SETTINGS is actually granted — see settings/page.tsx.
+        ...(hasPermission("SETTINGS") || isStaffDoctor ? [{ label: "Settings", icon: Settings, path: "/dashboard/settings", group: "System" }] : []),
+        ...(!isStaff ? [{ label: "Subscription", icon: ShieldCheck, path: "/dashboard/subscription", group: "System", badge: subscriptionBadge }] : []),
       ];
 
   const pageTitle = (() => {

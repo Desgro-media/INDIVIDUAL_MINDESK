@@ -64,9 +64,18 @@ public class Appointment {
     @Column(columnDefinition = "TEXT")
     private String feedback;
 
-    // The owning practitioner — always set server-side, never from client input
+    // The owning tenant (clinic or individual) — always set server-side,
+    // never from client input. For an individual this is the same value as
+    // assignedDoctorId; for a clinic it's the clinic's tenant-root id.
     @Column(name = "psychologist_id", nullable = false)
     private Long psychologistId;
+
+    // Which specific practitioner this appointment is with — always set
+    // server-side, validated via StaffResolutionService. Equal to
+    // psychologistId for individuals. Nullable at the entity level only for
+    // pre-existing rows pending the startup backfill (see StartupInitializer).
+    @Column(name = "assigned_doctor_id")
+    private Long assignedDoctorId;
 
     @CreationTimestamp
     @Column(updatable = false)

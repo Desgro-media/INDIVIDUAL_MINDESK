@@ -35,9 +35,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String username = jwtUtil.extractUsername(jwt);
 
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                    // Reloaded from the DB on every request (never cached),
+                    // so a staff deactivation (see StaffService.deactivateStaff)
+                    // takes effect on the very next call, not just on the
+                    // next login — an already-issued JWT for a deactivated
+                    // account must stop working immediately, not linger
+                    // until it naturally expires (up to 8h later).
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                    if (jwtUtil.validateToken(jwt, userDetails)) {
+                    if (userDetails.isEnabled() && jwtUtil.validateToken(jwt, userDetails)) {
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
 

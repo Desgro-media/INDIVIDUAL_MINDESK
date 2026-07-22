@@ -970,18 +970,53 @@ function HolidaysCalendar({ holidays, onToggle }: { holidays: string[]; onToggle
 }
 
 // ── Main Page ───────────────────────────────────────────────────────────────
+// selfScoped tabs read/write the CALLER'S OWN /me/** rows (profile, service
+// pricing, calendar) — meaningful for a tenant root (individual or clinic
+// owner) or a staff-doctor. The rest are clinic-wide (ClinicSettings, bank
+// accounts, holidays) and require the SETTINGS permission for clinic staff.
 const TABS = [
-  { key: 'profile',      label: 'Profile' },
-  { key: 'services',     label: 'Services & Pricing' },
-  { key: 'availability', label: 'Availability' },
-  { key: 'practice',     label: 'Practice Info' },
-  { key: 'payment',      label: 'Payment & Banking' },
-  { key: 'holidays',     label: 'Leave Days' },
+  { key: 'profile',      label: 'Profile',              selfScoped: true },
+  { key: 'services',     label: 'Services & Pricing',   selfScoped: true },
+  { key: 'availability', label: 'Availability',         selfScoped: true },
+  { key: 'practice',     label: 'Practice Info',        selfScoped: false },
+  { key: 'payment',      label: 'Payment & Banking',    selfScoped: false },
+  { key: 'holidays',     label: 'Leave Days',           selfScoped: false },
 ] as const;
 type TabKey = typeof TABS[number]['key'];
 
+// Mirrors dashboard/layout.tsx's own access computation — kept local (no
+// shared context in this app) rather than introduced as a new dependency.
+function useSettingsAccess() {
+  const [access, setAccess] = useState({ showSelfScoped: true, showClinicWide: true });
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || 'null');
+      if (!user) return;
+      const isStaff = !!user.tenantId;
+      const isStaffDoctor = isStaff && user.role === 'ROLE_PSYCHOLOGIST';
+      const permissions: string[] = Array.isArray(user.permissions) ? user.permissions : [];
+      setAccess({
+        showSelfScoped: !isStaff || isStaffDoctor,
+        showClinicWide: !isStaff || permissions.includes('SETTINGS'),
+      });
+    } catch { /* default to showing everything if we can't tell */ }
+  }, []);
+  return access;
+}
+
 export default function SettingsPage() {
+  const { showSelfScoped, showClinicWide } = useSettingsAccess();
+  const visibleTabs = TABS.filter(t => t.selfScoped ? showSelfScoped : showClinicWide);
   const [tab, setTab] = useState<TabKey>('profile');
+
+  // If the user's default tab isn't actually visible to them (e.g. a
+  // receptionist with SETTINGS but no calendar of their own landing on
+  // "profile"), fall back to the first tab they can actually see.
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.some(t => t.key === tab)) {
+      setTab(visibleTabs[0].key);
+    }
+  }, [visibleTabs, tab]);
 
   return (
     <div style={{ maxWidth: 820 }} className="anim-fade-up">
@@ -991,7 +1026,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="soft-card-2" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 14, marginBottom: 24, flexWrap: 'wrap', width: 'fit-content' }}>
-        {TABS.map(t => (
+        {visibleTabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`tab-pill${tab === t.key ? ' active' : ''}`}
             style={{
@@ -1007,6 +1042,11 @@ export default function SettingsPage() {
       </div>
 
       <div className="soft-card" style={{ borderRadius: 26, padding: 32 }}>
+        {visibleTabs.length === 0 && (
+          <p style={{ fontSize: 13, color: "var(--text-3)", textAlign: "center", padding: "20px 0" }}>
+            You don&apos;t have access to any settings here.
+          </p>
+        )}
         {tab === 'profile'      && <ProfileTab />}
         {tab === 'services'     && <ServicesPricingTab />}
         {tab === 'availability' && <AvailabilityTab />}

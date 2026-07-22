@@ -26,7 +26,7 @@ public class ClinicServiceController {
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public List<ClinicServiceDto> getAllServices() {
-        return serviceRepo.findByPsychologistIdOrderByDisplayOrderAscCreatedAtAsc(currentUserProvider.getCurrentUserId())
+        return serviceRepo.findByPsychologistIdOrderByDisplayOrderAscCreatedAtAsc(currentUserProvider.getCurrentTenantId())
                 .stream().map(this::toDto).collect(Collectors.toList());
     }
 
@@ -34,7 +34,7 @@ public class ClinicServiceController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClinicServiceDto> createService(@RequestBody ClinicServiceDto dto) {
         ClinicService svc = ClinicService.builder()
-                .psychologistId(currentUserProvider.getCurrentUserId())
+                .psychologistId(currentUserProvider.getCurrentTenantId())
                 .name(dto.getName())
                 .description(dto.getDescription())
                 .duration(dto.getDuration() != null ? dto.getDuration() : "50 min")
@@ -49,7 +49,7 @@ public class ClinicServiceController {
     @PutMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClinicServiceDto> updateService(@PathVariable Long id, @RequestBody ClinicServiceDto dto) {
-        ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentUserId())
+        ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + id));
         svc.setName(dto.getName());
         svc.setDescription(dto.getDescription());
@@ -64,7 +64,7 @@ public class ClinicServiceController {
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteService(@PathVariable Long id) {
-        ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentUserId())
+        ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + id));
         serviceRepo.delete(svc);
         return ResponseEntity.noContent().build();
@@ -73,7 +73,7 @@ public class ClinicServiceController {
     @PatchMapping("/{id}/toggle")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ClinicServiceDto> toggleService(@PathVariable Long id) {
-        ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentUserId())
+        ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + id));
         svc.setActive(!svc.isActive());
         return ResponseEntity.ok(toDto(serviceRepo.save(svc)));

@@ -21,7 +21,29 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     boolean existsByUsernameAndRole(String username, String role);
 
-    // Superadmin tenant list — every practitioner account (never includes the
-    // superadmin itself).
-    List<AppUser> findByRoleOrderByCreatedAtDesc(String role);
+    // Superadmin tenant list / startup grandfathering — every tenant-ROOT
+    // practitioner account (never a clinic's staff row, never the superadmin
+    // itself). tenantId IS NULL is what distinguishes a real tenant from a
+    // staff doctor who merely shares the PSYCHOLOGIST role string.
+    List<AppUser> findByRoleAndTenantIdIsNullOrderByCreatedAtDesc(String role);
+
+    // A clinic's staff roster, for the Staff Management dashboard.
+    List<AppUser> findByTenantIdOrderByNameAsc(Long tenantId);
+
+    // Ownership-checked staff lookup — a miss (wrong id OR belongs to a
+    // different clinic) is treated identically, see ResourceNotFoundException.
+    Optional<AppUser> findByIdAndTenantId(Long id, Long tenantId);
+
+    // The public, bookable roster for a clinic's booking page. Explicitly
+    // role-filtered (not just bookable=true) as defense in depth — a
+    // receptionist/support-staff row should never be able to appear here even
+    // if some future bug on the write side left bookable=true set on one.
+    List<AppUser> findByTenantIdAndRoleAndBookableTrueAndEnabledTrue(Long tenantId, String role);
+
+    // Ownership-checked, role-restricted staff lookup — used wherever a
+    // client-supplied id is being validated as "a specific bookable doctor
+    // within this clinic" (see StaffResolutionService), so a receptionist id
+    // can never be resolved as a practitioner even if it were somehow left
+    // bookable=true.
+    Optional<AppUser> findByIdAndTenantIdAndRole(Long id, Long tenantId, String role);
 }

@@ -23,7 +23,7 @@ public class ReportController {
     @GetMapping("/summary")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, Object>> getSummary() {
-        return ResponseEntity.ok(reportService.getSummary(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(reportService.getSummary(currentUserProvider.getCurrentTenantId()));
     }
 
     @GetMapping("/trends")

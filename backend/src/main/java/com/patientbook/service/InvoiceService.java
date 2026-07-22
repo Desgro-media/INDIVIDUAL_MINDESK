@@ -54,7 +54,15 @@ public class InvoiceService {
         } else if (appointment.getSessionType() != null) {
             try {
                 Long serviceId = Long.parseLong(appointment.getSessionType());
-                fee = doctorAvailabilityService.resolvePrice(appointment.getPsychologistId(), serviceId);
+                // Pricing is per-PRACTITIONER (DoctorServicePrice is keyed by
+                // the doctor's own id), never per-tenant — using
+                // psychologistId here would silently charge every patient the
+                // clinic owner's price regardless of which staff doctor they
+                // actually saw. Falls back to psychologistId only for rows
+                // that predate assignedDoctorId (individuals: same value).
+                Long pricingDoctorId = appointment.getAssignedDoctorId() != null
+                        ? appointment.getAssignedDoctorId() : appointment.getPsychologistId();
+                fee = doctorAvailabilityService.resolvePrice(appointment.getPsychologistId(), pricingDoctorId, serviceId);
             } catch (NumberFormatException ignored) {
                 // sessionType is a name string, not an ID
             }

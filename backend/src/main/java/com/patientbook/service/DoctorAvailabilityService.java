@@ -45,11 +45,15 @@ public class DoctorAvailabilityService {
                 .collect(Collectors.toList());
     }
 
-    // ── Get all of the caller's own services with prices (including not-offered) ─
-    public List<DoctorServicePriceDto> getAllDoctorServices(Long psychologistId) {
+    // ── Get all of a doctor's services with prices (including not-offered) ────
+    // tenantId scopes the shared service CATALOG (which services exist at
+    // all — clinic-wide); doctorId scopes which of those this specific
+    // practitioner has priced/offered. For an individual these are the same
+    // value, so behavior is unchanged.
+    public List<DoctorServicePriceDto> getAllDoctorServices(Long tenantId, Long doctorId) {
         List<com.patientbook.entity.ClinicService> allServices =
-                clinicServiceRepository.findByPsychologistIdAndActiveTrueOrderByDisplayOrderAscCreatedAtAsc(psychologistId);
-        List<DoctorServicePrice> configured = servicePriceRepository.findByPsychologistId(psychologistId);
+                clinicServiceRepository.findByPsychologistIdAndActiveTrueOrderByDisplayOrderAscCreatedAtAsc(tenantId);
+        List<DoctorServicePrice> configured = servicePriceRepository.findByPsychologistId(doctorId);
         Map<Long, DoctorServicePrice> configMap = configured.stream()
                 .collect(Collectors.toMap(dsp -> dsp.getClinicService().getId(), dsp -> dsp));
 
@@ -68,21 +72,23 @@ public class DoctorAvailabilityService {
         }).collect(Collectors.toList());
     }
 
-    // ── Save all service prices for the caller's own account at once ─────────
+    // ── Save all of a doctor's service prices at once ─────────────────────────
+    // tenantId scopes which service ids are even valid to price (the shared
+    // catalog); doctorId is whose DoctorServicePrice rows get written.
     @Transactional
-    public List<DoctorServicePriceDto> saveDoctorServices(Long psychologistId,
+    public List<DoctorServicePriceDto> saveDoctorServices(Long tenantId, Long doctorId,
                                                           List<DoctorServicePriceDto> updates) {
-        AppUser psychologist = userRepository.findById(psychologistId)
-                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found: " + psychologistId));
+        AppUser doctor = userRepository.findById(doctorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found: " + doctorId));
 
         for (DoctorServicePriceDto dto : updates) {
-            // Ownership-checked — a service id belonging to a different account is rejected.
+            // Ownership-checked — a service id belonging to a different tenant is rejected.
             com.patientbook.entity.ClinicService svc =
-                    clinicServiceRepository.findByIdAndPsychologistId(dto.getClinicServiceId(), psychologistId)
+                    clinicServiceRepository.findByIdAndPsychologistId(dto.getClinicServiceId(), tenantId)
                             .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + dto.getClinicServiceId()));
 
             Optional<DoctorServicePrice> existing =
-                    servicePriceRepository.findByPsychologistIdAndClinicServiceId(psychologistId, svc.getId());
+                    servicePriceRepository.findByPsychologistIdAndClinicServiceId(doctorId, svc.getId());
 
             if (existing.isPresent()) {
                 existing.get().setPrice(dto.getPrice() != null ? dto.getPrice() : BigDecimal.ZERO);
@@ -90,7 +96,7 @@ public class DoctorAvailabilityService {
                 servicePriceRepository.save(existing.get());
             } else {
                 servicePriceRepository.save(DoctorServicePrice.builder()
-                        .psychologist(psychologist)
+                        .psychologist(doctor)
                         .clinicService(svc)
                         .price(dto.getPrice() != null ? dto.getPrice() : BigDecimal.ZERO)
                         .offered(dto.isOffered())
@@ -98,7 +104,7 @@ public class DoctorAvailabilityService {
             }
         }
 
-        return getAllDoctorServices(psychologistId);
+        return getAllDoctorServices(tenantId, doctorId);
     }
 
     // ── Get weekly schedule for the caller's own account ──────────────────────
@@ -285,18 +291,22 @@ public class DoctorAvailabilityService {
                 .collect(Collectors.toList());
     }
 
-    // ── Resolve the caller's own price for a service ────────────────────────────
-    public BigDecimal resolvePrice(Long psychologistId, Long clinicServiceId) {
-        if (psychologistId != null && clinicServiceId != null) {
+    // ── Resolve a specific doctor's price for a service ─────────────────────────
+    // doctorId scopes the per-doctor DoctorServicePrice row (each staff
+    // member can price the same service differently); tenantId scopes the
+    // catalog-fee fallback (which is clinic-wide, not per-doctor). For an
+    // individual these are the same value, so behavior is unchanged.
+    public BigDecimal resolvePrice(Long tenantId, Long doctorId, Long clinicServiceId) {
+        if (doctorId != null && clinicServiceId != null) {
             Optional<DoctorServicePrice> dsp =
-                    servicePriceRepository.findByPsychologistIdAndClinicServiceId(psychologistId, clinicServiceId);
+                    servicePriceRepository.findByPsychologistIdAndClinicServiceId(doctorId, clinicServiceId);
             if (dsp.isPresent() && dsp.get().isOffered()) {
                 return dsp.get().getPrice();
             }
         }
         // Fall back to the service's own catalog fee (still ownership-checked)
-        if (clinicServiceId != null && psychologistId != null) {
-            return clinicServiceRepository.findByIdAndPsychologistId(clinicServiceId, psychologistId)
+        if (clinicServiceId != null && tenantId != null) {
+            return clinicServiceRepository.findByIdAndPsychologistId(clinicServiceId, tenantId)
                     .map(s -> s.getFee() != null ? s.getFee() : BigDecimal.ZERO)
                     .orElse(BigDecimal.ZERO);
         }

@@ -23,9 +23,16 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         AppUser appUser = appUserRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User Not Found with username: " + username));
 
+        // Spring Security's User has first-class support for a disabled
+        // account — DaoAuthenticationProvider checks this automatically and
+        // throws DisabledException (handled by GlobalExceptionHandler) for a
+        // deactivated staff member, rather than us needing a bespoke check
+        // somewhere after authentication.
         return new User(
                 appUser.getUsername(),
                 appUser.getPassword(),
+                appUser.isEnabled(),
+                true, true, true,
                 Collections.singletonList(new SimpleGrantedAuthority(appUser.getRole()))
         );
     }

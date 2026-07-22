@@ -33,14 +33,17 @@ public class AppointmentController {
         return ResponseEntity.ok(appointmentService.bookAppointment(request));
     }
 
-    // ── Manual scheduling from the dashboard (the practitioner booking a
-    // slot for a patient themselves, not the public booking form) — always
-    // under the caller's own account, never a client-supplied owner. ─────
+    // ── Manual scheduling from the dashboard (the practitioner/staff booking
+    // a slot for a patient themselves, not the public booking form) — always
+    // under the caller's own tenant, never a client-supplied tenant. An
+    // optional request.staffId picks which clinic staff member the
+    // appointment is with (validated to belong to the caller's own tenant);
+    // omitted, it defaults to the caller's own calendar. ──────────────────
     @PostMapping("/appointments/manual")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AppointmentDto> scheduleManually(@RequestBody BookingRequest request) {
-        return ResponseEntity.ok(appointmentService.bookAppointmentForOwner(
-                request, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(appointmentService.scheduleManually(
+                request, currentUserProvider.getCurrentTenantId(), currentUserProvider.getCurrentUserId()));
     }
 
     @PostMapping("/demo-booking")
@@ -91,10 +94,13 @@ public class AppointmentController {
         String sessionType = body.get("sessionType");
         String notes       = body.getOrDefault("notes", "");
         String status      = body.getOrDefault("status", "COMPLETED");
+        Long staffId       = body.get("staffId") != null && !body.get("staffId").isBlank()
+                ? Long.parseLong(body.get("staffId")) : null;
 
-        Long ownerId = currentUserProvider.getCurrentUserId();
-        return ResponseEntity.ok(
-                appointmentService.recordPastSession(patientId, ownerId, date, time, sessionType, notes, status));
+        Long tenantId = currentUserProvider.getCurrentTenantId();
+        Long callerOwnId = currentUserProvider.getCurrentUserId();
+        return ResponseEntity.ok(appointmentService.recordPastSession(
+                patientId, tenantId, callerOwnId, staffId, date, time, sessionType, notes, status));
     }
 
     // ── Protected endpoints — always scoped to the caller's own account ───
@@ -102,7 +108,7 @@ public class AppointmentController {
     @GetMapping("/appointments")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<AppointmentDto>> getAllAppointments() {
-        return ResponseEntity.ok(appointmentService.getAppointmentsByPsychologist(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(appointmentService.getAppointmentsByPsychologist(currentUserProvider.getCurrentTenantId()));
     }
 
     @PatchMapping("/appointments/{id}")
@@ -113,7 +119,7 @@ public class AppointmentController {
             @RequestParam(required = false) String cancellationReason,
             @RequestParam(required = false) BigDecimal fee) {
         return ResponseEntity.ok(appointmentService.updateAppointmentStatus(
-                id, currentUserProvider.getCurrentUserId(), status, cancellationReason, fee));
+                id, currentUserProvider.getCurrentTenantId(), status, cancellationReason, fee));
     }
 
     @PatchMapping("/appointments/{id}/convert")
@@ -122,7 +128,7 @@ public class AppointmentController {
             @PathVariable Long id,
             @Valid @RequestBody ConvertDemoRequest request) {
         return ResponseEntity.ok(appointmentService.convertDemoToAppointment(
-                id, currentUserProvider.getCurrentUserId(), request));
+                id, currentUserProvider.getCurrentTenantId(), request));
     }
 
     @PatchMapping("/appointments/{id}/notes")
@@ -131,13 +137,13 @@ public class AppointmentController {
             @PathVariable Long id,
             @RequestBody java.util.Map<String, String> payload) {
         return ResponseEntity.ok(appointmentService.updateAppointmentNotes(
-                id, currentUserProvider.getCurrentUserId(), payload.get("notes")));
+                id, currentUserProvider.getCurrentTenantId(), payload.get("notes")));
     }
 
     @DeleteMapping("/appointments/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteAppointment(@PathVariable Long id) {
-        appointmentService.deleteAppointment(id, currentUserProvider.getCurrentUserId());
+        appointmentService.deleteAppointment(id, currentUserProvider.getCurrentTenantId());
         return ResponseEntity.noContent().build();
     }
 
@@ -151,6 +157,6 @@ public class AppointmentController {
         String sessionType = body.get("sessionType");
         String notes       = body.get("notes");
         return ResponseEntity.ok(appointmentService.updateAppointmentDetails(
-                id, currentUserProvider.getCurrentUserId(), date, time, sessionType, notes));
+                id, currentUserProvider.getCurrentTenantId(), date, time, sessionType, notes));
     }
 }

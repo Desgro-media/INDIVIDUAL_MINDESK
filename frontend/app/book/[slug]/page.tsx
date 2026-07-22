@@ -52,10 +52,19 @@ interface PractitionerInfo {
   bio: string | null;
   profileImageUrl: string | null;
   bookable: boolean;
+  accountType: "INDIVIDUAL" | "CLINIC";
   clinicName: string | null;
   address: string | null;
   contactPhone: string | null;
   contactEmail: string | null;
+}
+
+interface StaffMember {
+  id: number;
+  name: string;
+  jobTitle: string | null;
+  bio: string | null;
+  profileImageUrl: string | null;
 }
 
 function MiniCalendar({ selected, onSelect, holidays = [] }: { selected: Date | null; onSelect: (d: Date) => void; holidays?: string[] }) {
@@ -107,8 +116,7 @@ function MiniCalendar({ selected, onSelect, holidays = [] }: { selected: Date | 
   );
 }
 
-function StepDots({ current, total }: { current: number; total: number }) {
-  const labels = ["Details", "Session", "Schedule", "Confirm"];
+function StepDots({ current, total, labels }: { current: number; total: number; labels: string[] }) {
   return (
     <div className="flex items-center gap-2">
       {Array.from({ length: total }, (_, i) => {
@@ -197,28 +205,64 @@ export default function BookingPage() {
   const [returningPatient, setReturningPatient] = useState<boolean>(false);
   const [emailChecking, setEmailChecking] = useState(false);
 
+  // ── Clinic practitioner picker (no-op for INDIVIDUAL accounts — staffList
+  // stays empty, selectedStaffId stays null, staffId is simply omitted from
+  // every request below, so an individual's booking flow is byte-for-byte
+  // unchanged) ─────────────────────────────────────────────────────────────
+  const isClinic = practitioner?.accountType === "CLINIC";
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
+  const [pickerActive, setPickerActive] = useState(false);
+
   useEffect(() => {
     publicApi.get(`/public/${slug}/info`)
       .then(r => setPractitioner(r.data))
       .catch(() => setNotFound(true))
       .finally(() => setInfoLoading(false));
     publicApi.get(`/public/${slug}/holidays`).then(r => setHolidays(r.data.map((h: any) => h.holidayDate))).catch(() => {});
-    publicApi.get(`/public/${slug}/services`)
+  }, [slug]);
+
+  // Only fetched once /info has resolved accountType. A clinic with exactly
+  // one bookable practitioner skips the picker entirely (auto-selected) —
+  // same friction as an individual booking link.
+  useEffect(() => {
+    if (!isClinic) return;
+    setStaffLoading(true);
+    publicApi.get(`/public/${slug}/staff`)
+      .then(r => {
+        const list: StaffMember[] = Array.isArray(r.data) ? r.data : [];
+        setStaffList(list);
+        if (list.length === 1) setSelectedStaffId(list[0].id);
+      })
+      .catch(() => setStaffList([]))
+      .finally(() => setStaffLoading(false));
+  }, [isClinic, slug]);
+
+  // Services are per-practitioner for a clinic, so this waits for a staff
+  // selection before fetching; for an individual (isClinic false,
+  // selectedStaffId always null) it fires immediately, exactly as before.
+  useEffect(() => {
+    if (isClinic && !selectedStaffId) return;
+    setSessionsLoading(true);
+    const staffParam = isClinic && selectedStaffId ? `?staffId=${selectedStaffId}` : "";
+    publicApi.get(`/public/${slug}/services${staffParam}`)
       .then(r => setSessionTypes(Array.isArray(r.data) ? r.data : []))
       .catch(() => {})
       .finally(() => setSessionsLoading(false));
-  }, [slug]);
+  }, [slug, isClinic, selectedStaffId]);
 
   const fetchSlots = useCallback(async (date: Date) => {
     setSlotsLoading(true);
     setSelectedTime("");
     try {
-      const r = await publicApi.get(`/public/${slug}/slots?date=${format(date, "yyyy-MM-dd")}`);
+      const staffParam = isClinic && selectedStaffId ? `&staffId=${selectedStaffId}` : "";
+      const r = await publicApi.get(`/public/${slug}/slots?date=${format(date, "yyyy-MM-dd")}${staffParam}`);
       setSlots(Array.isArray(r.data) ? r.data : []);
     } catch {
       setSlots([]);
     } finally { setSlotsLoading(false); }
-  }, [slug]);
+  }, [slug, isClinic, selectedStaffId]);
 
   useEffect(() => { if (selectedDate) fetchSlots(selectedDate); }, [selectedDate, fetchSlots]);
 
@@ -250,6 +294,14 @@ export default function BookingPage() {
         setForm(f => ({ ...f, patientEmail: "" }));
       }
       setError("");
+      // A clinic with more than one bookable practitioner (or none picked
+      // yet) sees a picker between Details and Session; an individual, or a
+      // clinic with exactly one bookable person (auto-selected), goes
+      // straight to step 2 exactly as before.
+      if (isClinic && !selectedStaffId) {
+        setPickerActive(true);
+        return;
+      }
       setStep(2);
       return;
     }
@@ -257,7 +309,12 @@ export default function BookingPage() {
     if (step === 3 && (!selectedDate || !selectedTime)) { setError("Please pick a date and time."); return; }
     setError(""); setStep(s => s + 1);
   };
-  const back = () => { setError(""); setStep(s => s - 1); };
+  const back = () => {
+    setError("");
+    if (pickerActive) { setPickerActive(false); return; }
+    if (step === 2 && isClinic && staffList.length > 1) { setPickerActive(true); return; }
+    setStep(s => s - 1);
+  };
 
   const submit = async () => {
     setLoading(true); setError("");
@@ -269,6 +326,7 @@ export default function BookingPage() {
         appointmentDate: format(selectedDate!, "yyyy-MM-dd"),
         startTime: selectedTime,
         slug,
+        ...(isClinic && selectedStaffId ? { staffId: selectedStaffId } : {}),
       });
       router.push(`/track/${res.data.trackingToken}`);
     } catch (e: any) {
@@ -288,7 +346,12 @@ export default function BookingPage() {
     return <div style={{ minHeight: "100vh" }} />;
   }
 
-  if (notFound || (practitioner && !practitioner.bookable)) {
+  // For a clinic, "bookable" on the /info response only reflects the
+  // clinic OWNER's own flag — the clinic itself might still have bookable
+  // staff even if the owner personally isn't one of them, so that check is
+  // skipped here; an empty staff roster is instead handled gracefully
+  // inside the practitioner-picker step above.
+  if (notFound || (practitioner && !isClinic && !practitioner.bookable)) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 20, textAlign: "center" }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-1)" }}>This booking link isn&apos;t available</h1>
@@ -320,15 +383,23 @@ export default function BookingPage() {
         <div style={{ textAlign: "center", marginBottom: 36 }} className="anim-fade-up">
           <p style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>Book Appointment</p>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: "var(--text-1)", lineHeight: 1.3 }}>
-            {practitioner?.name}
+            {isClinic ? (practitioner?.clinicName || practitioner?.name) : practitioner?.name}
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
-            {practitioner?.jobTitle || "Psychologist"}
+            {isClinic ? "Choose your practitioner and book a session" : (practitioner?.jobTitle || "Psychologist")}
           </p>
         </div>
 
         <div style={{ marginBottom: 32 }} className="anim-fade-up d1">
-          <StepDots current={step} total={4} />
+          {isClinic ? (
+            <StepDots
+              current={pickerActive ? 2 : (step === 1 ? 1 : step + 1)}
+              total={5}
+              labels={["Details", "Practitioner", "Session", "Schedule", "Confirm"]}
+            />
+          ) : (
+            <StepDots current={step} total={4} labels={["Details", "Session", "Schedule", "Confirm"]} />
+          )}
         </div>
 
         <div className="nm-raised-lg anim-scale-in d2" style={{ borderRadius: 28, padding: "32px 28px" }}>
@@ -338,8 +409,56 @@ export default function BookingPage() {
             </div>
           )}
 
+          {/* ── PRACTITIONER PICKER (clinics with 2+ bookable staff) ── */}
+          {pickerActive && (
+            <div className="anim-slide-r">
+              <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Choose a Practitioner</h2>
+              <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>Who would you like to see?</p>
+
+              {staffLoading ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
+                  <Loader2 style={{ width: 24, height: 24, color: "var(--accent)", animation: "spinSlow 1s linear infinite" }} />
+                </div>
+              ) : staffList.length === 0 ? (
+                <div className="nm-inset-sm" style={{ borderRadius: 16, padding: 24, textAlign: "center", marginBottom: 24 }}>
+                  <p style={{ fontSize: 12, color: "var(--text-3)" }}>No practitioners are currently accepting bookings.</p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+                  {staffList.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => { setSelectedStaffId(s.id); setPickerActive(false); setStep(2); }}
+                      className={`session-card-nm ${selectedStaffId === s.id ? "selected" : ""}`}
+                      style={{ textAlign: "left", background: "var(--bg)", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px" }}
+                    >
+                      <div style={{
+                        width: 40, height: 40, borderRadius: "50%", flexShrink: 0, overflow: "hidden",
+                        background: "var(--bg)", boxShadow: "3px 3px 7px var(--sd), -3px -3px 7px var(--sl)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {s.profileImageUrl
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={s.profileImageUrl} alt={s.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : <User style={{ width: 16, height: 16, color: "var(--accent)" }} />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>{s.name}</p>
+                        {s.jobTitle && <p style={{ fontSize: 11, color: "var(--text-3)" }}>{s.jobTitle}</p>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <button className="btn-nm" onClick={back} style={{ padding: "12px 20px" }}>
+                <ChevronLeft style={{ width: 14, height: 14 }} /> Back
+              </button>
+            </div>
+          )}
+
           {/* ── STEP 1: Details ─────────────────────────────────── */}
-          {step === 1 && (
+          {!pickerActive && step === 1 && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Your Details</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>No account needed — just the basics.</p>
@@ -385,7 +504,7 @@ export default function BookingPage() {
           )}
 
           {/* ── STEP 2: Session Type ─────────────────────────────── */}
-          {step === 2 && (
+          {!pickerActive && step === 2 && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Session Type</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>Choose what fits your needs.</p>
@@ -466,7 +585,7 @@ export default function BookingPage() {
           )}
 
           {/* ── STEP 3: Date & Time ───────────────────────────────── */}
-          {step === 3 && (
+          {!pickerActive && step === 3 && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Schedule</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 24 }}>Pick a date, then choose a time slot.</p>
@@ -534,13 +653,16 @@ export default function BookingPage() {
           )}
 
           {/* ── STEP 4: Confirm ──────────────────────────────────── */}
-          {step === 4 && (
+          {!pickerActive && step === 4 && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Review & Confirm</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 24 }}>Everything look right?</p>
 
               <div className="nm-inset-sm" style={{ borderRadius: 18, padding: "20px", marginBottom: 24 }}>
                 {[
+                  ...(isClinic && selectedStaffId
+                    ? [{ label: "Practitioner", value: staffList.find(s => s.id === selectedStaffId)?.name || "—" }]
+                    : []),
                   { label: "Patient",       value: form.patientName },
                   ...(form.patientEmail ? [{ label: "Email",    value: form.patientEmail }] : []),
                   { label: "Phone",         value: form.patientPhone },

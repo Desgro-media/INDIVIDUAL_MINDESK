@@ -41,4 +41,10 @@ public class BookingRequest {
     @NotBlank
     @Size(max = 100)
     private String slug;
+
+    // Optional — which specific staff member (within a clinic) this booking
+    // is for. Always validated server-side (see StaffResolutionService)
+    // before use; never trusted as-is. Null/omitted for individual
+    // practitioners and for a clinic's default/first-available booking.
+    private Long staffId;
 }

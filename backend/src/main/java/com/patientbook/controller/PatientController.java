@@ -33,26 +33,26 @@ public class PatientController {
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<Patient>> getAllPatients() {
-        return ResponseEntity.ok(patientService.getAllPatients(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(patientService.getAllPatients(currentUserProvider.getCurrentTenantId()));
     }
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Patient> createPatient(@RequestBody Patient patient) {
-        return ResponseEntity.ok(patientService.createPatient(patient, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(patientService.createPatient(patient, currentUserProvider.getCurrentTenantId()));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Patient> getPatientById(@PathVariable Long id) {
-        return ResponseEntity.ok(patientService.getPatientById(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(patientService.getPatientById(id, currentUserProvider.getCurrentTenantId()));
     }
 
     @GetMapping("/{id}/appointments")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<AppointmentDto>> getPatientAppointments(@PathVariable Long id) {
-        Long ownerId = currentUserProvider.getCurrentUserId();
-        return ResponseEntity.ok(appointmentService.getAppointmentsByPatientIdAndPsychologist(id, ownerId));
+        Long tenantId = currentUserProvider.getCurrentTenantId();
+        return ResponseEntity.ok(appointmentService.getAppointmentsByPatientIdAndPsychologist(id, tenantId));
     }
 
     @PatchMapping("/{id}/details")
@@ -64,7 +64,7 @@ public class PatientController {
         String email = body.get("email") != null ? body.get("email").toString() : null;
         String phone = body.get("phone") != null ? body.get("phone").toString() : null;
         return ResponseEntity.ok(patientService.updatePatientDetails(
-                id, currentUserProvider.getCurrentUserId(), name, email, phone));
+                id, currentUserProvider.getCurrentTenantId(), name, email, phone));
     }
 
     @PatchMapping("/{id}/risk-flag")
@@ -75,13 +75,13 @@ public class PatientController {
         Boolean riskFlag  = Boolean.valueOf(body.get("riskFlag").toString());
         String riskReason = body.get("riskReason") != null ? body.get("riskReason").toString() : null;
         return ResponseEntity.ok(patientService.updateRiskFlag(
-                id, currentUserProvider.getCurrentUserId(), riskFlag, riskReason));
+                id, currentUserProvider.getCurrentTenantId(), riskFlag, riskReason));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deletePatient(@PathVariable Long id) {
-        patientService.deletePatient(id, currentUserProvider.getCurrentUserId());
+        patientService.deletePatient(id, currentUserProvider.getCurrentTenantId());
         return ResponseEntity.noContent().build();
     }
 
@@ -97,20 +97,20 @@ public class PatientController {
         String fileName = body.get("fileName") != null ? body.get("fileName").toString() : null;
         String fileData = body.get("fileData") != null ? body.get("fileData").toString() : null;
         return ResponseEntity.ok(patientAttachmentService.uploadAttachment(
-                id, currentUserProvider.getCurrentUserId(), fileName, fileData));
+                id, currentUserProvider.getCurrentTenantId(), fileName, fileData));
     }
 
     @GetMapping("/{id}/attachments")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<PatientAttachmentDto>> getAttachments(@PathVariable Long id) {
-        return ResponseEntity.ok(patientAttachmentService.getAttachments(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(patientAttachmentService.getAttachments(id, currentUserProvider.getCurrentTenantId()));
     }
 
     @GetMapping("/{id}/attachments/{attachmentId}/download")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<byte[]> downloadAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
         PatientAttachment attachment = patientAttachmentService.getAttachmentForDownload(
-                id, attachmentId, currentUserProvider.getCurrentUserId());
+                id, attachmentId, currentUserProvider.getCurrentTenantId());
         byte[] fileBytes = Base64.getDecoder().decode(attachment.getFileData());
         ContentDisposition disposition = ContentDisposition.attachment()
                 .filename(attachment.getFileName(), java.nio.charset.StandardCharsets.UTF_8)
@@ -124,7 +124,7 @@ public class PatientController {
     @DeleteMapping("/{id}/attachments/{attachmentId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteAttachment(@PathVariable Long id, @PathVariable Long attachmentId) {
-        patientAttachmentService.deleteAttachment(id, attachmentId, currentUserProvider.getCurrentUserId());
+        patientAttachmentService.deleteAttachment(id, attachmentId, currentUserProvider.getCurrentTenantId());
         return ResponseEntity.noContent().build();
     }
 }

@@ -3,6 +3,8 @@ package com.patientbook.controller;
 import com.patientbook.dto.BankAccountDto;
 import com.patientbook.dto.ClinicServiceDto;
 import com.patientbook.dto.DoctorServicePriceDto;
+import com.patientbook.dto.StaffPublicDto;
+import com.patientbook.entity.AccountType;
 import com.patientbook.entity.AppUser;
 import com.patientbook.entity.ClinicHoliday;
 import com.patientbook.entity.ClinicService;
@@ -14,11 +16,13 @@ import com.patientbook.service.BankAccountService;
 import com.patientbook.service.DoctorAvailabilityService;
 import com.patientbook.service.ResourceNotFoundException;
 import com.patientbook.service.SettingsService;
+import com.patientbook.service.StaffResolutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +44,7 @@ public class PublicController {
     private final PatientRepository patientRepository;
     private final com.patientbook.repository.ClinicHolidayRepository clinicHolidayRepository;
     private final com.patientbook.repository.AppointmentRepository appointmentRepository;
+    private final StaffResolutionService staffResolutionService;
 
     @GetMapping("/info")
     public ResponseEntity<Map<String, Object>> getInfo(@PathVariable String slug) {
@@ -53,6 +58,10 @@ public class PublicController {
         info.put("bio", owner.getBio());
         info.put("profileImageUrl", owner.getProfileImageUrl());
         info.put("bookable", owner.isBookable());
+        // INDIVIDUAL or CLINIC — tells the booking wizard whether to render a
+        // practitioner-picker step. Pre-clinic-feature accounts have no
+        // accountType set; treat that as INDIVIDUAL (their actual behavior).
+        info.put("accountType", owner.getAccountType() != null ? owner.getAccountType().name() : AccountType.INDIVIDUAL.name());
         info.put("clinicName", settings.getClinicName());
         info.put("address", settings.getAddress());
         info.put("contactPhone", settings.getContactPhone());
@@ -60,6 +69,23 @@ public class PublicController {
         info.put("paymentQrCodeUrl", settings.getPaymentQrCodeUrl());
         info.put("demoCallNumber", settings.getDemoCallNumber());
         return ResponseEntity.ok(info);
+    }
+
+    // The clinic's bookable staff roster (the tenant-root row itself, if it's
+    // bookable, plus every enabled+bookable staff member). For an INDIVIDUAL
+    // account this is just that one practitioner — the frontend only shows a
+    // picker when info.accountType === 'CLINIC', so this list is otherwise
+    // unused for individuals.
+    @GetMapping("/staff")
+    public ResponseEntity<List<StaffPublicDto>> getBookableStaff(@PathVariable String slug) {
+        AppUser owner = resolveOwner(slug);
+        List<StaffPublicDto> roster = new ArrayList<>();
+        if (owner.isBookable() && owner.isEnabled()) {
+            roster.add(toStaffDto(owner));
+        }
+        appUserRepository.findByTenantIdAndRoleAndBookableTrueAndEnabledTrue(owner.getId(), com.patientbook.security.Roles.PSYCHOLOGIST)
+                .forEach(staff -> roster.add(toStaffDto(staff)));
+        return ResponseEntity.ok(roster);
     }
 
     // The full catalog (name/description/duration/fee/icon) — used by the
@@ -73,23 +99,33 @@ public class PublicController {
         return ResponseEntity.ok(services);
     }
 
-    // Priced/offered services for the actual booking flow
+    // Priced/offered services for the actual booking flow. An optional
+    // staffId picks a specific clinic staff member's pricing (validated to
+    // belong to this tenant and be bookable); omitted, defaults to the
+    // tenant owner — the only path an INDIVIDUAL booking ever takes.
     @GetMapping("/services")
-    public ResponseEntity<List<DoctorServicePriceDto>> getOfferedServices(@PathVariable String slug) {
+    public ResponseEntity<List<DoctorServicePriceDto>> getOfferedServices(
+            @PathVariable String slug, @RequestParam(required = false) Long staffId) {
         AppUser owner = resolveOwner(slug);
-        return ResponseEntity.ok(doctorAvailabilityService.getDoctorOfferedServices(owner.getId()));
+        Long doctorId = staffResolutionService.resolveBookableDoctorId(owner, staffId);
+        return ResponseEntity.ok(doctorAvailabilityService.getDoctorOfferedServices(doctorId));
     }
 
     @GetMapping("/slots")
-    public ResponseEntity<List<String>> getSlots(@PathVariable String slug, @RequestParam LocalDate date) {
+    public ResponseEntity<List<String>> getSlots(
+            @PathVariable String slug, @RequestParam LocalDate date, @RequestParam(required = false) Long staffId) {
         AppUser owner = resolveOwner(slug);
+        Long doctorId = staffResolutionService.resolveBookableDoctorId(owner, staffId);
+        // Holiday/closure is a clinic-wide setting; slot-conflict is scoped
+        // to the specific practitioner so two different doctors in the same
+        // clinic can be booked at the same time.
         boolean isHoliday = clinicHolidayRepository.findByHolidayDateAndPsychologistId(date, owner.getId()).isPresent();
-        java.util.Set<String> booked = appointmentRepository.findByAppointmentDateAndPsychologistId(date, owner.getId())
+        java.util.Set<String> booked = appointmentRepository.findByAppointmentDateAndAssignedDoctorId(date, doctorId)
                 .stream()
                 .filter(a -> !"CANCELLED".equals(a.getStatus()))
                 .map(a -> a.getStartTime().toString().substring(0, 5))
                 .collect(Collectors.toSet());
-        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(owner.getId(), date, booked, isHoliday));
+        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(doctorId, date, booked, isHoliday));
     }
 
     @GetMapping("/holidays")
@@ -116,6 +152,16 @@ public class PublicController {
     private AppUser resolveOwner(String slug) {
         return appUserRepository.findBySlugAndRole(slug, com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
+    }
+
+    private StaffPublicDto toStaffDto(AppUser staff) {
+        return StaffPublicDto.builder()
+                .id(staff.getId())
+                .name(staff.getName())
+                .jobTitle(staff.getJobTitle())
+                .bio(staff.getBio())
+                .profileImageUrl(staff.getProfileImageUrl())
+                .build();
     }
 
     private ClinicServiceDto toDto(ClinicService svc) {
