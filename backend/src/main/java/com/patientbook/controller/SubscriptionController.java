@@ -29,18 +29,18 @@ public class SubscriptionController {
     @GetMapping("/me")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<SubscriptionStatusDto> getStatus() {
-        return ResponseEntity.ok(subscriptionService.getStatus(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(subscriptionService.getStatus(currentUserProvider.getCurrentTenantId()));
     }
 
     @PostMapping("/payment-submissions")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<PaymentSubmissionDto> submitPayment(@Valid @RequestBody PaymentSubmissionRequest request) {
-        return ResponseEntity.ok(subscriptionService.submitPayment(currentUserProvider.getCurrentUserId(), request));
+        return ResponseEntity.ok(subscriptionService.submitPayment(currentUserProvider.getCurrentTenantId(), request));
     }
 
     @GetMapping("/payment-submissions")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<PaymentSubmissionDto>> getSubmissions() {
-        return ResponseEntity.ok(subscriptionService.getSubmissions(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(subscriptionService.getSubmissions(currentUserProvider.getCurrentTenantId()));
     }
 }

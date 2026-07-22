@@ -63,6 +63,9 @@ function LoginForm() {
         name: res.data.name,
         slug: res.data.slug,
         role: res.data.role,
+        accountType: res.data.accountType,
+        tenantId: res.data.tenantId,
+        permissions: res.data.permissions,
       });
       // This form is the practitioner entry point — a superadmin account
       // (there's only ever one, seeded server-side) still routes correctly

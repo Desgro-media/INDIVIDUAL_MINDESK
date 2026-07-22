@@ -123,6 +123,31 @@ Every account that existed before this feature shipped was grandfathered in
 as unrestricted — the trial/expiry clock only applies to accounts created
 from here on.
 
+## One-time database fix: deploying the clinic/staff feature
+
+This app has no migration framework — Hibernate's `ddl-auto=update` adds new
+*nullable* columns automatically, but Postgres refuses two things it can't do
+safely on a table that already has rows: adding a `NOT NULL` column with no
+default, and relaxing an existing `NOT NULL` constraint. The clinic/staff
+feature needs both on `app_user` (`enabled boolean NOT NULL` for staff
+deactivation, and `slug` becoming nullable for staff rows). On a **fresh**
+database this is a non-issue; on any database that already has accounts in
+it (including this project's own dev/prod databases as of when this feature
+shipped), the backend will crash on startup with
+`column "enabled" of relation "app_user" contains null values` until you run
+this once:
+
+```bash
+docker compose -f docker-compose.prod.yml exec individual-db \
+  psql -U individual -d individual -c \
+  "ALTER TABLE app_user ADD COLUMN enabled boolean NOT NULL DEFAULT true;"
+docker compose -f docker-compose.prod.yml exec individual-db \
+  psql -U individual -d individual -c \
+  "ALTER TABLE app_user ALTER COLUMN slug DROP NOT NULL;"
+```
+(swap the exec target/db name for your actual container/db if you customized
+`docker-compose.prod.yml`). Then start/restart the backend normally.
+
 ## Redeploying after code changes
 ```bash
 git pull

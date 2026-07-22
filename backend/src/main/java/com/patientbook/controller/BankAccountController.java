@@ -24,13 +24,13 @@ public class BankAccountController {
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<BankAccountDto>> getAllBankAccounts() {
-        return ResponseEntity.ok(bankAccountService.getAllBankAccounts(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(bankAccountService.getAllBankAccounts(currentUserProvider.getCurrentTenantId()));
     }
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<BankAccountDto> createBankAccount(@RequestBody BankAccountDto dto) {
-        return ResponseEntity.ok(bankAccountService.createBankAccount(dto, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(bankAccountService.createBankAccount(dto, currentUserProvider.getCurrentTenantId()));
     }
 
     @PutMapping("/{id}")
@@ -38,19 +38,19 @@ public class BankAccountController {
     public ResponseEntity<BankAccountDto> updateBankAccount(
             @PathVariable Long id,
             @RequestBody BankAccountDto dto) {
-        return ResponseEntity.ok(bankAccountService.updateBankAccount(id, currentUserProvider.getCurrentUserId(), dto));
+        return ResponseEntity.ok(bankAccountService.updateBankAccount(id, currentUserProvider.getCurrentTenantId(), dto));
     }
 
     @PatchMapping("/{id}/set-default")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<BankAccountDto> setDefault(@PathVariable Long id) {
-        return ResponseEntity.ok(bankAccountService.setDefault(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(bankAccountService.setDefault(id, currentUserProvider.getCurrentTenantId()));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteBankAccount(@PathVariable Long id) {
-        bankAccountService.deleteBankAccount(id, currentUserProvider.getCurrentUserId());
+        bankAccountService.deleteBankAccount(id, currentUserProvider.getCurrentTenantId());
         return ResponseEntity.noContent().build();
     }
 }

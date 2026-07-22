@@ -32,14 +32,14 @@ public class MoodController {
     @GetMapping("/patient/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<MoodLogDto>> getMoodByPatient(@PathVariable Long id) {
-        return ResponseEntity.ok(moodLogService.getMoodLogsByPatient(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(moodLogService.getMoodLogsByPatient(id, currentUserProvider.getCurrentTenantId()));
     }
 
     // GET /api/v1/mood/appointment/{id}
     @GetMapping("/appointment/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getMoodByAppointment(@PathVariable Long id) {
-        return moodLogService.getMoodLogByAppointment(id, currentUserProvider.getCurrentUserId())
+        return moodLogService.getMoodLogByAppointment(id, currentUserProvider.getCurrentTenantId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
     }

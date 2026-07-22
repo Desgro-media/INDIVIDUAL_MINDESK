@@ -3,6 +3,7 @@ package com.patientbook.config;
 import com.patientbook.entity.AppUser;
 import com.patientbook.entity.Subscription;
 import com.patientbook.repository.AppUserRepository;
+import com.patientbook.repository.AppointmentRepository;
 import com.patientbook.repository.SubscriptionRepository;
 import com.patientbook.security.Roles;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,9 @@ import java.util.List;
 //  2. Seeds the single superadmin account from SUPERADMIN_EMAIL/PASSWORD env
 //     vars, if configured and not already created. There is no signup path
 //     for this role — this is the only way it's ever provisioned.
+//  3. Backfills Appointment.assignedDoctorId (added for clinic staff support)
+//     from the pre-existing psychologistId column, for every row from before
+//     the column existed.
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -32,6 +36,7 @@ public class StartupInitializer implements ApplicationRunner {
 
     private final AppUserRepository appUserRepository;
     private final SubscriptionRepository subscriptionRepository;
+    private final AppointmentRepository appointmentRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${superadmin.email:}")
@@ -45,10 +50,21 @@ public class StartupInitializer implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         grandfatherExistingTenants();
         seedSuperAdmin();
+        backfillAssignedDoctorId();
+    }
+
+    private void backfillAssignedDoctorId() {
+        int updated = appointmentRepository.backfillAssignedDoctorIdFromPsychologistId();
+        if (updated > 0) {
+            log.info("Backfilled assignedDoctorId on {} pre-existing appointment(s)", updated);
+        }
     }
 
     private void grandfatherExistingTenants() {
-        List<AppUser> tenants = appUserRepository.findByRoleOrderByCreatedAtDesc(Roles.PSYCHOLOGIST);
+        // tenantId IS NULL excludes clinic staff-doctors, who share the
+        // PSYCHOLOGIST role string but don't have (or need) their own
+        // independent Subscription row — see AppUserRepository.
+        List<AppUser> tenants = appUserRepository.findByRoleAndTenantIdIsNullOrderByCreatedAtDesc(Roles.PSYCHOLOGIST);
         int created = 0;
         for (AppUser tenant : tenants) {
             if (subscriptionRepository.existsByPsychologistId(tenant.getId())) continue;

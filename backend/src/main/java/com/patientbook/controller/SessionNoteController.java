@@ -24,14 +24,14 @@ public class SessionNoteController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<SessionNoteDto> saveNote(@RequestBody Map<String, Object> body) {
         Long appointmentId = Long.valueOf(body.get("appointmentId").toString());
-        return ResponseEntity.ok(sessionNoteService.saveNote(appointmentId, currentUserProvider.getCurrentUserId(), body));
+        return ResponseEntity.ok(sessionNoteService.saveNote(appointmentId, currentUserProvider.getCurrentTenantId(), body));
     }
 
     // GET /api/v1/notes/appointment/{id}
     @GetMapping("/appointment/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getNoteByAppointment(@PathVariable Long id) {
-        return sessionNoteService.getNoteByAppointment(id, currentUserProvider.getCurrentUserId())
+        return sessionNoteService.getNoteByAppointment(id, currentUserProvider.getCurrentTenantId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
     }
@@ -40,14 +40,14 @@ public class SessionNoteController {
     @GetMapping("/patient/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<SessionNoteDto>> getNotesByPatient(@PathVariable Long id) {
-        return ResponseEntity.ok(sessionNoteService.getNotesByPatient(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(sessionNoteService.getNotesByPatient(id, currentUserProvider.getCurrentTenantId()));
     }
 
     // DELETE /api/v1/notes/{id}
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteNote(@PathVariable Long id) {
-        sessionNoteService.deleteNote(id, currentUserProvider.getCurrentUserId());
+        sessionNoteService.deleteNote(id, currentUserProvider.getCurrentTenantId());
         return ResponseEntity.noContent().build();
     }
 }

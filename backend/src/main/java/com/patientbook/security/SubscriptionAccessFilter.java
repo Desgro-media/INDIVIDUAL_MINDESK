@@ -74,7 +74,12 @@ public class SubscriptionAccessFilter extends OncePerRequestFilter {
         }
 
         Optional<AppUser> user = appUserRepository.findByUsername(authentication.getName());
-        if (user.isEmpty() || subscriptionService.isAccessAllowed(user.get().getId())) {
+        // A clinic staff row has no Subscription of its own — gating must
+        // reflect the owning clinic's billing state, not the staff member's
+        // (nonexistent) one, or every staff login would be locked out
+        // immediately regardless of the clinic's real subscription status.
+        Long tenantId = user.map(u -> u.getTenantId() != null ? u.getTenantId() : u.getId()).orElse(null);
+        if (user.isEmpty() || subscriptionService.isAccessAllowed(tenantId)) {
             filterChain.doFilter(request, response);
         } else {
             response.setStatus(402); // Payment Required

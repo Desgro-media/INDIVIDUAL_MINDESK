@@ -3,6 +3,7 @@ package com.patientbook.controller;
 import com.patientbook.dto.AuthResponse;
 import com.patientbook.dto.LoginRequest;
 import com.patientbook.dto.SignupRequest;
+import com.patientbook.entity.AccountType;
 import com.patientbook.entity.AppUser;
 import com.patientbook.entity.ClinicService;
 import com.patientbook.entity.ClinicSettings;
@@ -11,10 +12,13 @@ import com.patientbook.repository.AppUserRepository;
 import com.patientbook.repository.ClinicServiceRepository;
 import com.patientbook.repository.ClinicSettingsRepository;
 import com.patientbook.repository.SubscriptionRepository;
+import com.patientbook.security.CurrentUserProvider;
 import com.patientbook.security.JwtUtil;
+import com.patientbook.service.StaffAttendanceService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -25,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -39,11 +45,15 @@ public class AuthController {
     private final SubscriptionRepository subscriptionRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final StaffAttendanceService staffAttendanceService;
+    private final CurrentUserProvider currentUserProvider;
 
     private static final int TRIAL_DAYS = 14;
 
-    // Every freelancer creates their own account here — there is no admin
-    // who provisions accounts for anyone else.
+    // Every freelancer/clinic creates their own tenant-root account here —
+    // there is no admin who provisions accounts for anyone else. Clinic
+    // STAFF accounts are provisioned separately by their clinic's admin —
+    // see StaffController — and never sign up here.
     @PostMapping("/signup")
     @Transactional
     public ResponseEntity<?> signup(@Valid @RequestBody SignupRequest request) {
@@ -53,15 +63,21 @@ public class AuthController {
             return ResponseEntity.badRequest().body(java.util.Map.of("message", "An account with this email already exists"));
         }
 
+        AccountType accountType = "CLINIC".equalsIgnoreCase(request.getAccountType())
+                ? AccountType.CLINIC : AccountType.INDIVIDUAL;
+
         AppUser user = AppUser.builder()
                 .username(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName().trim())
                 .slug(generateUniqueSlug(request.getName()))
+                .accountType(accountType)
                 .build();
         user = appUserRepository.save(user);
 
-        seedDefaultsFor(user.getId(), user.getName());
+        String clinicName = accountType == AccountType.CLINIC && request.getClinicName() != null
+                && !request.getClinicName().isBlank() ? request.getClinicName().trim() : null;
+        seedDefaultsFor(user.getId(), user.getName(), clinicName);
         startTrial(user.getId());
 
         return ResponseEntity.ok(buildAuthResponse(user, issueToken(email, request.getPassword())));
@@ -74,7 +90,21 @@ public class AuthController {
         AppUser appUser = appUserRepository.findByUsername(loginRequest.getEmail().trim().toLowerCase())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // Only ever records for clinic staff (tenantId set) — see
+        // StaffAttendanceService, which no-ops for tenant roots/superadmin.
+        staffAttendanceService.recordLogin(appUser);
+
         return ResponseEntity.ok(buildAuthResponse(appUser, jwt));
+    }
+
+    // The frontend calls this before clearing its local session so a staff
+    // member's attendance history gets a real logout time / worked-minutes
+    // figure instead of showing "still active" forever.
+    @PostMapping("/logout")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> logout() {
+        staffAttendanceService.recordLogout(currentUserProvider.getCurrentUser());
+        return ResponseEntity.noContent().build();
     }
 
     // Lets the frontend confirm a locally-stored token is still valid (not
@@ -103,6 +133,10 @@ public class AuthController {
     }
 
     private AuthResponse buildAuthResponse(AppUser appUser, String token) {
+        List<String> permissions = (appUser.getPermissions() != null && !appUser.getPermissions().isBlank())
+                ? Arrays.asList(appUser.getPermissions().split(","))
+                : Collections.emptyList();
+
         return AuthResponse.builder()
                 .token(token)
                 .id(appUser.getId())
@@ -111,6 +145,9 @@ public class AuthController {
                 .slug(appUser.getSlug())
                 .jobTitle(appUser.getJobTitle())
                 .role(appUser.getRole())
+                .accountType(appUser.getAccountType() != null ? appUser.getAccountType().name() : null)
+                .tenantId(appUser.getTenantId())
+                .permissions(permissions)
                 .build();
     }
 
@@ -141,10 +178,11 @@ public class AuthController {
 
     // Every new account starts with its own copy of the default service
     // catalog and an empty practice-settings row, scoped to that account only.
-    private void seedDefaultsFor(Long psychologistId, String name) {
+    private void seedDefaultsFor(Long psychologistId, String name, String clinicName) {
         clinicSettingsRepository.save(ClinicSettings.builder()
                 .psychologistId(psychologistId)
                 .doctorName(name)
+                .clinicName(clinicName)
                 .build());
 
         List<ClinicService> defaults = List.of(

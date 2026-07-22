@@ -35,6 +35,7 @@ public class SecurityConfig {
     private final PublicApiRateLimitFilter publicApiRateLimitFilter;
     private final SubscriptionAccessFilter subscriptionAccessFilter;
     private final SuperAdminIpFilter superAdminIpFilter;
+    private final StaffPermissionFilter staffPermissionFilter;
 
     // Comma-separated list of allowed frontend origins, e.g.
     // "https://app.yourdomain.com,https://yourdomain.com". Defaults to "*"
@@ -119,6 +120,10 @@ public class SecurityConfig {
         // populated) — blocks the tenant dashboard API once a trial/subscription
         // has lapsed. See SubscriptionAccessFilter for the exact scope.
         http.addFilterAfter(subscriptionAccessFilter, JwtAuthenticationFilter.class);
+        // Runs after the subscription gate — a locked clinic's staff should
+        // see the 402 "renew your subscription" message rather than a
+        // confusing permission-denied 403 first. See StaffPermissionFilter.
+        http.addFilterAfter(staffPermissionFilter, SubscriptionAccessFilter.class);
 
         return http.build();
     }

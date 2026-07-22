@@ -97,15 +97,21 @@ export default function DashboardPage() {
     setLoading(true);
     setLoadError(false);
 
-    Promise.all([
+    // Promise.allSettled, not Promise.all — a clinic staff login with only
+    // some dashboard permissions granted (e.g. Appointments but not
+    // Patients) gets a 403 from whichever call it lacks access to; that's
+    // correct enforcement, not a page-load failure, so it shouldn't blank
+    // out the stats the staff member DOES have access to.
+    Promise.allSettled([
       api.get("/appointments"),
       api.get("/patients"),
     ]).then(([aRes, pRes]) => {
-      setAppointments(aRes.data);
-      setPatients(pRes.data);
-    }).catch((err) => {
-      console.error(err);
-      setLoadError(true);
+      if (aRes.status === "fulfilled") setAppointments(aRes.value.data);
+      if (pRes.status === "fulfilled") setPatients(pRes.value.data);
+      if (aRes.status === "rejected" && pRes.status === "rejected") {
+        console.error(aRes.reason);
+        setLoadError(true);
+      }
     }).finally(() => setLoading(false));
   }, []);
 

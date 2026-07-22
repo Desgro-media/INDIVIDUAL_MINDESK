@@ -39,6 +39,7 @@ public class AppointmentService {
     private final AppUserRepository userRepository;
     private final DoctorAvailabilityService doctorAvailabilityService;
     private final ClinicServiceRepository clinicServiceRepository;
+    private final StaffResolutionService staffResolutionService;
 
     @Lazy
     @Autowired
@@ -61,30 +62,45 @@ public class AppointmentService {
     public AppointmentDto bookAppointment(BookingRequest request) {
         AppUser owner = userRepository.findBySlugAndRole(request.getSlug(), com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
-        return bookAppointmentForOwner(request, owner.getId());
+        // Validates request.getStaffId() belongs to this clinic and is
+        // actually bookable before trusting it — this is what stops a client
+        // from booking against a practitioner in a different clinic (the
+        // read-side staff/services/slots endpoints in PublicController use
+        // the same validator, so both sides agree on who's bookable).
+        Long assignedDoctorId = staffResolutionService.resolveBookableDoctorId(owner, request.getStaffId());
+        return bookAppointmentForOwner(request, owner.getId(), assignedDoctorId);
+    }
+
+    // ── Manual scheduling from the dashboard ───────────────────────────────
+    @Transactional
+    public AppointmentDto scheduleManually(BookingRequest request, Long tenantId, Long callerOwnId) {
+        Long assignedDoctorId = staffResolutionService.resolveTenantStaffId(tenantId, callerOwnId, request.getStaffId());
+        return bookAppointmentForOwner(request, tenantId, assignedDoctorId);
     }
 
     @Transactional
-    public AppointmentDto bookAppointmentForOwner(BookingRequest request, Long ownerId) {
+    public AppointmentDto bookAppointmentForOwner(BookingRequest request, Long tenantId, Long assignedDoctorId) {
 
-        // 1. Find or create patient (identified by phone, scoped to this practitioner)
+        // 1. Find or create patient (identified by phone, scoped to this tenant —
+        // shared across every staff member in a clinic)
         // Normalize email: treat blank string as null to avoid unique-constraint collisions
         String normalizedEmail = (request.getPatientEmail() != null && !request.getPatientEmail().isBlank())
                 ? request.getPatientEmail().trim() : null;
 
-        Patient patient = patientRepository.findByPhoneAndPrimaryPsychologistId(request.getPatientPhone(), ownerId)
+        Patient patient = patientRepository.findByPhoneAndPrimaryPsychologistId(request.getPatientPhone(), tenantId)
                 .orElseGet(() -> {
                     Patient newPatient = Patient.builder()
                             .name(request.getPatientName())
                             .email(normalizedEmail)
                             .phone(request.getPatientPhone())
-                            .primaryPsychologistId(ownerId)
+                            .primaryPsychologistId(tenantId)
                             .build();
                     return patientRepository.save(newPatient);
                 });
 
-        // 2. Determine session duration (try to parse from service, default 60 min)
-        int slotDuration = resolveSessionDurationMinutes(request.getSessionType(), ownerId);
+        // 2. Determine session duration (try to parse from service, default 60 min) —
+        // the service catalog is tenant-wide, so this stays keyed by tenantId
+        int slotDuration = resolveSessionDurationMinutes(request.getSessionType(), tenantId);
 
         // 3. Generate a unique 25-char tracking token
         String trackingToken = UUID.randomUUID().toString().replace("-", "").substring(0, 25);
@@ -104,7 +120,8 @@ public class AppointmentService {
                 .sessionType(request.getSessionType())
                 .notes(request.getNotes())
                 .previousAppointmentId(previousAppointmentId)
-                .psychologistId(ownerId)
+                .psychologistId(tenantId)
+                .assignedDoctorId(assignedDoctorId)
                 .build();
 
         appointment = appointmentRepository.save(appointment);
@@ -158,9 +175,13 @@ public class AppointmentService {
         newRequest.setSessionType(oldAppointment.getSessionType());
         newRequest.setNotes(oldAppointment.getNotes());
 
-        // Owner is carried over from the existing (already-verified) appointment,
-        // not re-derived from client input.
-        return bookAppointmentForOwner(newRequest, oldAppointment.getPsychologistId());
+        // Tenant AND the specific practitioner are both carried over from the
+        // existing (already-verified) appointment, not re-derived from client
+        // input — a rebook must land back with the same doctor, not silently
+        // fall back to the clinic owner.
+        Long carriedAssignedDoctorId = oldAppointment.getAssignedDoctorId() != null
+                ? oldAppointment.getAssignedDoctorId() : oldAppointment.getPsychologistId();
+        return bookAppointmentForOwner(newRequest, oldAppointment.getPsychologistId(), carriedAssignedDoctorId);
     }
 
     // ── Get appointments for a practitioner (always scoped to the caller) ──
@@ -304,15 +325,16 @@ public class AppointmentService {
 
     // ── Convert a demo call to a real appointment ──────────────────────────
     @Transactional
-    public AppointmentDto convertDemoToAppointment(Long id, Long ownerId, ConvertDemoRequest request) {
-        Appointment appointment = appointmentRepository.findByIdAndPsychologistId(id, ownerId)
+    public AppointmentDto convertDemoToAppointment(Long id, Long tenantId, ConvertDemoRequest request) {
+        Appointment appointment = appointmentRepository.findByIdAndPsychologistId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found: " + id));
 
         if (!"DEMO_CALL_PENDING".equals(appointment.getStatus())) {
             throw new IllegalStateException("Only demo call requests can be converted to appointments");
         }
 
-        int slotDuration = resolveSessionDurationMinutes(request.getSessionType(), ownerId);
+        int slotDuration = resolveSessionDurationMinutes(request.getSessionType(), tenantId);
+        Long assignedDoctorId = staffResolutionService.resolveTenantStaffId(tenantId, tenantId, request.getStaffId());
 
         appointment.setAppointmentDate(request.getAppointmentDate());
         appointment.setStartTime(request.getStartTime());
@@ -320,6 +342,7 @@ public class AppointmentService {
         if (request.getSessionType() != null && !request.getSessionType().isBlank()) {
             appointment.setSessionType(request.getSessionType());
         }
+        appointment.setAssignedDoctorId(assignedDoctorId);
         appointment.setStatus("AWAITING_PAYMENT");
         appointment = appointmentRepository.save(appointment);
 
@@ -373,15 +396,17 @@ public class AppointmentService {
         return mapToDto(appointmentRepository.save(appt));
     }
 
-    // ── Record a past session (always under the caller's own account) ─────
+    // ── Record a past session (always under the caller's own tenant) ──────
     @Transactional
-    public AppointmentDto recordPastSession(Long patientId, Long ownerId, LocalDate date, LocalTime time,
+    public AppointmentDto recordPastSession(Long patientId, Long tenantId, Long callerOwnId, Long requestedStaffId,
+                                            LocalDate date, LocalTime time,
                                             String sessionType, String notes, String status) {
-        Patient patient = patientRepository.findByIdAndPrimaryPsychologistId(patientId, ownerId)
+        Patient patient = patientRepository.findByIdAndPrimaryPsychologistId(patientId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Patient not found: " + patientId));
 
-        int slotDuration = resolveSessionDurationMinutes(sessionType, ownerId);
+        int slotDuration = resolveSessionDurationMinutes(sessionType, tenantId);
         String resolvedStatus = (status != null && !status.isBlank()) ? status : "COMPLETED";
+        Long assignedDoctorId = staffResolutionService.resolveTenantStaffId(tenantId, callerOwnId, requestedStaffId);
 
         Appointment appt = Appointment.builder()
                 .patient(patient)
@@ -392,7 +417,8 @@ public class AppointmentService {
                 .sessionType(sessionType)
                 .notes(notes)
                 .trackingToken(UUID.randomUUID().toString().replace("-", "").substring(0, 25))
-                .psychologistId(ownerId)
+                .psychologistId(tenantId)
+                .assignedDoctorId(assignedDoctorId)
                 .build();
 
         appt = appointmentRepository.save(appt);
@@ -425,6 +451,15 @@ public class AppointmentService {
         String psychologistName = owner != null ? owner.getName() : null;
         String psychologistSlug = owner != null ? owner.getSlug() : null;
 
+        // Which specific practitioner this appointment is with — falls back
+        // to the tenant owner for pre-assignedDoctorId rows (should only
+        // happen in the brief window before StartupInitializer's backfill).
+        Long assignedDoctorId = appointment.getAssignedDoctorId() != null
+                ? appointment.getAssignedDoctorId() : appointment.getPsychologistId();
+        AppUser assignedDoctor = assignedDoctorId.equals(appointment.getPsychologistId())
+                ? owner : userRepository.findById(assignedDoctorId).orElse(null);
+        String assignedDoctorName = assignedDoctor != null ? assignedDoctor.getName() : null;
+
         return AppointmentDto.builder()
                 .id(appointment.getId())
                 .patientId(appointment.getPatient().getId())
@@ -451,6 +486,8 @@ public class AppointmentService {
                 .psychologistId(appointment.getPsychologistId())
                 .psychologistName(psychologistName)
                 .psychologistSlug(psychologistSlug)
+                .assignedDoctorId(assignedDoctorId)
+                .assignedDoctorName(assignedDoctorName)
                 .build();
     }
 }

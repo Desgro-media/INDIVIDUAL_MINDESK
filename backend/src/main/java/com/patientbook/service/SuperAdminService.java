@@ -40,7 +40,10 @@ public class SuperAdminService {
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd MMM yyyy");
 
     public List<TenantSummaryDto> listTenants() {
-        return appUserRepository.findByRoleOrderByCreatedAtDesc(Roles.PSYCHOLOGIST)
+        // tenantId IS NULL excludes clinic staff-doctors, who share the
+        // PSYCHOLOGIST role string with real tenants but aren't billed
+        // independently — see AppUserRepository.
+        return appUserRepository.findByRoleAndTenantIdIsNullOrderByCreatedAtDesc(Roles.PSYCHOLOGIST)
                 .stream().map(this::toSummary).collect(Collectors.toList());
     }
 
@@ -112,7 +115,7 @@ public class SuperAdminService {
     @Transactional
     public TenantSummaryDto overrideSubscription(Long tenantId, Long adminId, SubscriptionOverrideRequest request) {
         AppUser tenant = appUserRepository.findById(tenantId)
-                .filter(u -> Roles.PSYCHOLOGIST.equals(u.getRole()))
+                .filter(u -> Roles.PSYCHOLOGIST.equals(u.getRole()) && u.getTenantId() == null)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
         Subscription sub = subscriptionRepository.findByPsychologistId(tenantId)
                 .orElseGet(() -> Subscription.builder().psychologistId(tenantId).status("EXPIRED").build());
@@ -147,6 +150,7 @@ public class SuperAdminService {
     // list can never drift out of sync with what's actually being gated.
     private TenantSummaryDto toSummary(AppUser tenant) {
         var status = subscriptionService.getStatus(tenant.getId());
+        boolean isClinic = tenant.getAccountType() == com.patientbook.entity.AccountType.CLINIC;
         return TenantSummaryDto.builder()
                 .id(tenant.getId())
                 .name(tenant.getName())
@@ -158,6 +162,11 @@ public class SuperAdminService {
                 .trialEndDate(status.getTrialEndDate())
                 .currentPeriodEnd(status.getCurrentPeriodEnd())
                 .daysRemaining(status.getDaysRemaining())
+                // Pre-clinic-feature tenants have no accountType set — every
+                // one of them really was an individual freelancer, so that's
+                // the correct label rather than leaving it blank/null.
+                .accountType(isClinic ? "CLINIC" : "INDIVIDUAL")
+                .staffCount(isClinic ? appUserRepository.findByTenantIdOrderByNameAsc(tenant.getId()).size() : 0)
                 .build();
     }
 

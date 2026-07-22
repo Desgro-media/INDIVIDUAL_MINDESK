@@ -24,28 +24,28 @@ public class InvoiceController {
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<InvoiceDto>> getAllInvoices() {
-        return ResponseEntity.ok(invoiceService.getAllInvoices(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(invoiceService.getAllInvoices(currentUserProvider.getCurrentTenantId()));
     }
 
     // GET /api/v1/invoices/patient/{id}
     @GetMapping("/patient/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<InvoiceDto>> getInvoicesByPatient(@PathVariable Long id) {
-        return ResponseEntity.ok(invoiceService.getInvoicesByPatient(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(invoiceService.getInvoicesByPatient(id, currentUserProvider.getCurrentTenantId()));
     }
 
     // GET /api/v1/invoices/appointment/{id}
     @GetMapping("/appointment/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<InvoiceDto> getInvoiceByAppointment(@PathVariable Long id) {
-        return ResponseEntity.ok(invoiceService.getInvoiceByAppointmentId(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(invoiceService.getInvoiceByAppointmentId(id, currentUserProvider.getCurrentTenantId()));
     }
 
     // GET /api/v1/invoices/summary — Revenue analytics
     @GetMapping("/summary")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, Object>> getRevenueSummary() {
-        return ResponseEntity.ok(invoiceService.getRevenueSummary(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(invoiceService.getRevenueSummary(currentUserProvider.getCurrentTenantId()));
     }
 
     // PATCH /api/v1/invoices/{id}/pay
@@ -72,7 +72,7 @@ public class InvoiceController {
         }
         String bankAccountName = body.get("bankAccountName");
         return ResponseEntity.ok(invoiceService.markAsPaid(
-                id, currentUserProvider.getCurrentUserId(), paymentMethod, discountAmount, discountReason, remark, bankAccountId, bankAccountName));
+                id, currentUserProvider.getCurrentTenantId(), paymentMethod, discountAmount, discountReason, remark, bankAccountId, bankAccountName));
     }
 
     // PATCH /api/v1/invoices/{id}/amount — override price before patient pays (UNPAID only)
@@ -86,7 +86,7 @@ public class InvoiceController {
         if (raw == null || raw.isBlank()) return ResponseEntity.badRequest().build();
         try {
             BigDecimal newAmount = new BigDecimal(raw);
-            return ResponseEntity.ok(invoiceService.updateAmount(id, currentUserProvider.getCurrentUserId(), newAmount));
+            return ResponseEntity.ok(invoiceService.updateAmount(id, currentUserProvider.getCurrentTenantId(), newAmount));
         } catch (NumberFormatException e) {
             return ResponseEntity.badRequest().build();
         }
@@ -96,6 +96,6 @@ public class InvoiceController {
     @PatchMapping("/{id}/waive")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<InvoiceDto> markAsWaived(@PathVariable Long id) {
-        return ResponseEntity.ok(invoiceService.markAsWaived(id, currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(invoiceService.markAsWaived(id, currentUserProvider.getCurrentTenantId()));
     }
 }

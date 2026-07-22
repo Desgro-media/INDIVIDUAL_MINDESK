@@ -43,8 +43,11 @@ public class DoctorController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<String>> getMySlots(@RequestParam LocalDate date) {
         Long ownerId = currentUserProvider.getCurrentUserId();
-        boolean isHoliday = clinicHolidayRepository.findByHolidayDateAndPsychologistId(date, ownerId).isPresent();
-        Set<String> booked = appointmentRepository.findByAppointmentDateAndPsychologistId(date, ownerId)
+        // Clinic closures/holidays are tenant-wide; slot-conflict is scoped
+        // to this specific doctor's own calendar (a colleague's booking at
+        // the same time isn't a conflict for me).
+        boolean isHoliday = clinicHolidayRepository.findByHolidayDateAndPsychologistId(date, currentUserProvider.getCurrentTenantId()).isPresent();
+        Set<String> booked = appointmentRepository.findByAppointmentDateAndAssignedDoctorId(date, ownerId)
                 .stream()
                 .filter(a -> !"CANCELLED".equals(a.getStatus()))
                 .map(a -> a.getStartTime().toString().substring(0, 5))
@@ -52,16 +55,20 @@ public class DoctorController {
         return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(ownerId, date, booked, isHoliday));
     }
 
+    // Which services EXIST is a clinic-wide catalog (tenant-scoped); which of
+    // them the caller personally offers/prices is per-doctor (self-scoped).
     @GetMapping("/services")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DoctorServicePriceDto>> getMyServices() {
-        return ResponseEntity.ok(doctorAvailabilityService.getAllDoctorServices(currentUserProvider.getCurrentUserId()));
+        return ResponseEntity.ok(doctorAvailabilityService.getAllDoctorServices(
+                currentUserProvider.getCurrentTenantId(), currentUserProvider.getCurrentUserId()));
     }
 
     @PutMapping("/services")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<DoctorServicePriceDto>> saveMyServices(@RequestBody List<DoctorServicePriceDto> updates) {
-        return ResponseEntity.ok(doctorAvailabilityService.saveDoctorServices(currentUserProvider.getCurrentUserId(), updates));
+        return ResponseEntity.ok(doctorAvailabilityService.saveDoctorServices(
+                currentUserProvider.getCurrentTenantId(), currentUserProvider.getCurrentUserId(), updates));
     }
 
     @GetMapping("/weekly-schedule")

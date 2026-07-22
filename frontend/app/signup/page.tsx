@@ -3,13 +3,15 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Activity, User, Mail, Lock, UserPlus, ArrowLeft } from "lucide-react";
+import { Activity, User, Mail, Lock, UserPlus, ArrowLeft, Building2 } from "lucide-react";
 import api from "../../lib/api";
 import { storeSession } from "../../lib/authSession";
 
 export default function SignupPage() {
   const router = useRouter();
+  const [accountType, setAccountType] = useState<"INDIVIDUAL" | "CLINIC">("INDIVIDUAL");
   const [name, setName] = useState("");
+  const [clinicName, setClinicName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -24,12 +26,18 @@ export default function SignupPage() {
     }
     setLoading(true);
     try {
-      const res = await api.post("/auth/signup", { name, email, password });
+      const res = await api.post("/auth/signup", {
+        name, email, password, accountType,
+        ...(accountType === "CLINIC" ? { clinicName } : {}),
+      });
       storeSession(res.data.token, {
         id: res.data.id,
         username: res.data.username,
         name: res.data.name,
         slug: res.data.slug,
+        accountType: res.data.accountType,
+        tenantId: res.data.tenantId,
+        permissions: res.data.permissions,
       });
       router.push("/dashboard");
     } catch (err: any) {
@@ -96,7 +104,50 @@ export default function SignupPage() {
 
             <div>
               <label className="block text-[11px] font-semibold text-[#8a90bc] uppercase tracking-[0.08em] mb-2">
-                Full Name
+                Account Type
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAccountType("INDIVIDUAL")}
+                  disabled={loading}
+                  className={`flex flex-col items-center gap-2 rounded-xl border px-4 py-3.5 transition-colors ${
+                    accountType === "INDIVIDUAL"
+                      ? "border-[#4f6ef7] bg-[#F0F3FF]"
+                      : "border-[#E4E8FF] bg-[#F8F9FF] hover:border-[#c7cfff]"
+                  }`}
+                >
+                  <User className={`w-4 h-4 ${accountType === "INDIVIDUAL" ? "text-[#4f6ef7]" : "text-[#8a90bc]"}`} />
+                  <span className={`text-[13px] font-semibold ${accountType === "INDIVIDUAL" ? "text-[#1b2048]" : "text-[#4a5282]"}`}>
+                    Individual
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccountType("CLINIC")}
+                  disabled={loading}
+                  className={`flex flex-col items-center gap-2 rounded-xl border px-4 py-3.5 transition-colors ${
+                    accountType === "CLINIC"
+                      ? "border-[#4f6ef7] bg-[#F0F3FF]"
+                      : "border-[#E4E8FF] bg-[#F8F9FF] hover:border-[#c7cfff]"
+                  }`}
+                >
+                  <Building2 className={`w-4 h-4 ${accountType === "CLINIC" ? "text-[#4f6ef7]" : "text-[#8a90bc]"}`} />
+                  <span className={`text-[13px] font-semibold ${accountType === "CLINIC" ? "text-[#1b2048]" : "text-[#4a5282]"}`}>
+                    Clinic
+                  </span>
+                </button>
+              </div>
+              <p className="text-[11px] text-[#8a90bc] mt-2">
+                {accountType === "CLINIC"
+                  ? "For practices with multiple staff — you'll be able to add staff logins from your dashboard."
+                  : "For solo practitioners — a single dashboard and booking link, just for you."}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-[#8a90bc] uppercase tracking-[0.08em] mb-2">
+                {accountType === "CLINIC" ? "Your Full Name" : "Full Name"}
               </label>
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8a90bc] pointer-events-none" />
@@ -111,6 +162,26 @@ export default function SignupPage() {
                 />
               </div>
             </div>
+
+            {accountType === "CLINIC" && (
+              <div className="anim-fade-in">
+                <label className="block text-[11px] font-semibold text-[#8a90bc] uppercase tracking-[0.08em] mb-2">
+                  Clinic Name
+                </label>
+                <div className="relative">
+                  <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8a90bc] pointer-events-none" />
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-[#E4E8FF] bg-[#F8F9FF] pl-11 pr-4 py-3.5 text-[14px] text-[#1b2048] placeholder:text-[#8a90bc] outline-none transition-colors focus:border-[#4f6ef7] focus:bg-white"
+                    placeholder="Sunrise Wellness Clinic"
+                    value={clinicName}
+                    onChange={(e) => setClinicName(e.target.value)}
+                    disabled={loading}
+                    required
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-[11px] font-semibold text-[#8a90bc] uppercase tracking-[0.08em] mb-2">
@@ -150,7 +221,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={loading || !name || !email || !password}
+              disabled={loading || !name || !email || !password || (accountType === "CLINIC" && !clinicName)}
               className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#4f6ef7] py-3.5 text-[14px] font-semibold text-white transition-all hover:bg-[#3d5ce0] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? "Creating account..." : (

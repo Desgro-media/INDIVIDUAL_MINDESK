@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { ArrowRight, Calendar, Check, CreditCard, LineChart, ShieldCheck } from "lucide-react";
+import { ArrowRight, Calendar, Check, CreditCard, LineChart, ShieldCheck, User, Building2 } from "lucide-react";
 import ScrollReveal from "@/components/ScrollReveal";
 import QuoteRotator from "@/components/QuoteRotator";
 import FaqAccordion from "@/components/FaqAccordion";
@@ -70,27 +70,94 @@ export default function Home() {
 
           {/* --- Hero Content --- */}
           <div className="px-6 md:px-10 pt-10 pb-14 md:pt-16 md:pb-16 opacity-0 animate-fade-in-up [animation-delay:100ms]">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#4f6ef7]/15 bg-[#4f6ef7]/[0.05] text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4a5282] mb-8">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#EA5790]"></span>
-              For independent psychologists
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-10 lg:gap-16 items-center">
+              {/* Left: headline + copy */}
+              <div>
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#4f6ef7]/15 bg-[#4f6ef7]/[0.05] text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4a5282] mb-8">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#EA5790]"></span>
+                  For independent psychologists & clinics
+                </div>
+
+                <p
+                  className="text-2xl md:text-3xl text-[#4a5282] font-medium mb-1"
+                  style={{ fontFamily: "var(--font-playfair), serif" }}
+                >
+                  Run your practice,
+                </p>
+                <h1 className="text-[clamp(3.2rem,11vw,9.5rem)] leading-[0.86] font-bold text-[#1b2048] tracking-tight -ml-1">
+                  Mindesk
+                </h1>
+
+                <p className="text-[#4a5282] text-[15px] leading-relaxed max-w-xl mt-6 opacity-0 animate-fade-in-up [animation-delay:300ms]">
+                  A booking page, client records, session notes, invoicing, and
+                  analytics — everything a psychologist needs to run their
+                  practice solo, with zero admin overhead. Running a clinic
+                  instead? Add your staff, give each one their own login and
+                  calendar, and let clients book the right practitioner —
+                  all from the same dashboard.
+                </p>
+              </div>
+
+              {/* Right: Individual vs Clinic showcase — one cohesive panel,
+                  not two competing cards, so it reads as part of the hero
+                  rather than a bolted-on pricing block. */}
+              <div className="w-full sm:w-[400px] lg:w-[320px] mx-auto lg:mx-0 opacity-0 animate-fade-in-up [animation-delay:250ms]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a90bc] text-center lg:text-left mb-3">
+                  Two ways to use Mindesk
+                </p>
+                <div className="bg-white border border-[#E4E8FF] rounded-3xl shadow-[0_12px_28px_rgba(80,110,200,0.07)] overflow-hidden">
+                  <div className="p-6">
+                    <div className="flex items-center gap-3 mb-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#4f6ef7]/10 border border-[#4f6ef7]/20 flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-[#4f6ef7]" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-[#1b2048] text-[14px] leading-tight">Individual</p>
+                        <p className="text-[#8a90bc] text-[11.5px]">For solo practitioners</p>
+                      </div>
+                    </div>
+                    <ul className="flex flex-col gap-1.5 pl-[3px]">
+                      {[
+                        "Your own booking link",
+                        "Patients, notes & invoicing",
+                        "Zero setup, zero admin",
+                      ].map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-[#4a5282] text-[13px]">
+                          <Check className="w-3.5 h-3.5 text-[#4f6ef7] mt-0.5 shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="h-px bg-[#E4E8FF] mx-6" />
+
+                  <div className="p-6">
+                    <div className="flex items-center gap-3 mb-3.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#8b5cf6]/10 border border-[#8b5cf6]/20 flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4 text-[#8b5cf6]" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-[#1b2048] text-[14px] leading-tight">Clinic</p>
+                        <p className="text-[#8a90bc] text-[11.5px]">For teams &amp; practices</p>
+                      </div>
+                    </div>
+                    <ul className="flex flex-col gap-1.5 pl-[3px]">
+                      {[
+                        "Unlimited staff logins",
+                        "Per-person dashboard permissions",
+                        "Clients pick their practitioner",
+                      ].map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-[#4a5282] text-[13px]">
+                          <Check className="w-3.5 h-3.5 text-[#8b5cf6] mt-0.5 shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            <p
-              className="text-2xl md:text-3xl text-[#4a5282] font-medium mb-1"
-              style={{ fontFamily: "var(--font-playfair), serif" }}
-            >
-              Run your practice,
-            </p>
-            <h1 className="text-[clamp(3.2rem,11vw,9.5rem)] leading-[0.86] font-bold text-[#1b2048] tracking-tight -ml-1">
-              Mindesk
-            </h1>
-
-            <p className="text-[#4a5282] text-[15px] leading-relaxed max-w-xl mt-6 opacity-0 animate-fade-in-up [animation-delay:300ms]">
-              A booking page, client records, session notes, invoicing, and
-              analytics — everything a freelance psychologist needs to run
-              their practice solo, with no clinic, no staff, and no admin
-              overhead.
-            </p>
           </div>
 
           {/* --- Trial badge + CTAs — centered across the full hero width --- */}
@@ -232,7 +299,7 @@ export default function Home() {
               <span className="absolute top-6 right-6 px-3 py-1 rounded-full bg-white/15 border border-white/25 text-white text-[10px] font-bold uppercase tracking-[0.1em]">
                 Recommended
               </span>
-              <p className="text-white/70 text-sm font-semibold uppercase tracking-[0.1em] mb-3">Individual</p>
+              <p className="text-white/70 text-sm font-semibold uppercase tracking-[0.1em] mb-3">Solo or Clinic</p>
               <div className="flex items-baseline gap-1.5 mb-6">
                 <span className="text-4xl font-bold text-white">₹9,999</span>
                 <span className="text-white/60 text-sm">/ year</span>
@@ -241,6 +308,7 @@ export default function Home() {
                 {[
                   "Everything in the free trial",
                   "Unlimited patients & appointments",
+                  "Clinics: add unlimited staff logins, free",
                   "Pay easily via GPay / UPI",
                   "Priority email support",
                 ].map(item => (
@@ -284,15 +352,19 @@ export default function Home() {
             items={[
               {
                 q: "Who is Mindesk for?",
-                a: "Freelance and independent psychologists who run their own practice without a clinic, staff, or admin team. Each account is a single practitioner — there's no multi-user or staff management, by design.",
+                a: "Both solo practitioners and clinics. Sign up as an Individual for a single-practitioner account with no staff or admin layer, or as a Clinic to add staff — each with their own login, calendar, and dashboard permissions — and let clients pick who they want to see when booking.",
+              },
+              {
+                q: "I run a clinic — can my staff have their own logins?",
+                a: "Yes. From your dashboard's Staff page, add a login for each doctor, receptionist, or assistant, and choose exactly what they can see (appointments, patients, billing, analytics, settings). Doctors manage their own calendar and pricing; you stay in control of who has access to what.",
               },
               {
                 q: "Do my clients need an account?",
-                a: "No. Clients book through your own public booking link with just their name, phone, and email — no login required.",
+                a: "No. Clients book through your own public booking link with just their name, phone, and email — no login required. Clinics can also let clients choose which staff member to book.",
               },
               {
                 q: "Is my client data shared with other practitioners?",
-                a: "No. Every account is fully isolated — your patients, appointments, notes, invoices, and settings are visible only to you.",
+                a: "Never across accounts — every practice's data is fully isolated. Within a clinic account, patients and appointments are shared among your own staff (based on what each staff member is given access to), but never visible to any other practice on Mindesk.",
               },
               {
                 q: "Can I change my services and pricing later?",

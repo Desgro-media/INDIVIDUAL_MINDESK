@@ -16,6 +16,8 @@ export interface TenantSummary {
     trialEndDate: string | null;
     currentPeriodEnd: string | null;
     daysRemaining: number | null;
+    accountType: 'INDIVIDUAL' | 'CLINIC';
+    staffCount: number;
 }
 
 export interface PaymentSubmissionReview {
