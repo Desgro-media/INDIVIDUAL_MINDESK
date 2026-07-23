@@ -1,8 +1,11 @@
 package com.patientbook.service;
 
+import com.patientbook.dto.PaymentHistoryEntryDto;
 import com.patientbook.dto.PaymentSubmissionReviewDto;
 import com.patientbook.dto.SubscriptionOverrideRequest;
+import com.patientbook.dto.SuperAdminDashboardStatsDto;
 import com.patientbook.dto.TenantSummaryDto;
+import com.patientbook.entity.AccountType;
 import com.patientbook.entity.AdminAuditLog;
 import com.patientbook.entity.AppUser;
 import com.patientbook.entity.PaymentSubmission;
@@ -16,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -55,6 +59,55 @@ public class SuperAdminService {
     public List<PaymentSubmissionReviewDto> listSubmissionsForTenant(Long tenantId) {
         return paymentSubmissionRepository.findByPsychologistIdOrderByCreatedAtDesc(tenantId)
                 .stream().map(this::toReviewDto).collect(Collectors.toList());
+    }
+
+    // Powers the overview screen: tenant mix + subscription-state breakdown
+    // come from listTenants()'s live status (never a raw, possibly-stale read
+    // of the subscription table) so these counts can never disagree with the
+    // Tenants table rendered right below them. Payment counts/revenue are
+    // status="APPROVED" only for revenue — a rejected or still-pending
+    // submission isn't money actually collected.
+    @Transactional
+    public SuperAdminDashboardStatsDto getDashboardStats() {
+        List<TenantSummaryDto> tenants = listTenants();
+
+        int totalClinics = 0, totalIndividuals = 0;
+        int active = 0, trialing = 0, expired = 0, cancelled = 0;
+        for (TenantSummaryDto t : tenants) {
+            if ("CLINIC".equals(t.getAccountType())) totalClinics++; else totalIndividuals++;
+            switch (t.getSubscriptionStatus()) {
+                case "ACTIVE": active++; break;
+                case "TRIALING": trialing++; break;
+                case "EXPIRED": expired++; break;
+                case "CANCELLED": cancelled++; break;
+                default: break; // "NONE" — no subscription row yet, shouldn't happen post-signup
+            }
+        }
+
+        long successful = paymentSubmissionRepository.countByStatus("APPROVED");
+        long pendingCount = paymentSubmissionRepository.countByStatus("PENDING");
+        long failed = paymentSubmissionRepository.countByStatus("REJECTED");
+        BigDecimal totalRevenue = paymentSubmissionRepository.sumAmountClaimedByStatus("APPROVED");
+        if (totalRevenue == null) totalRevenue = BigDecimal.ZERO;
+
+        List<PaymentHistoryEntryDto> recent = paymentSubmissionRepository.findTop20ByOrderByCreatedAtDesc()
+                .stream().map(this::toHistoryDto).collect(Collectors.toList());
+
+        return SuperAdminDashboardStatsDto.builder()
+                .totalClinics(totalClinics)
+                .totalIndividuals(totalIndividuals)
+                .totalTenants(tenants.size())
+                .activeSubscriptions(active)
+                .trialingSubscriptions(trialing)
+                .expiredSubscriptions(expired)
+                .cancelledSubscriptions(cancelled)
+                .totalPayments((int) (successful + pendingCount + failed))
+                .successfulPayments((int) successful)
+                .pendingPayments((int) pendingCount)
+                .failedPayments((int) failed)
+                .totalRevenue(totalRevenue)
+                .recentPayments(recent)
+                .build();
     }
 
     @Transactional
@@ -167,6 +220,24 @@ public class SuperAdminService {
                 // the correct label rather than leaving it blank/null.
                 .accountType(isClinic ? "CLINIC" : "INDIVIDUAL")
                 .staffCount(isClinic ? appUserRepository.findByTenantIdOrderByNameAsc(tenant.getId()).size() : 0)
+                .build();
+    }
+
+    private PaymentHistoryEntryDto toHistoryDto(PaymentSubmission s) {
+        AppUser tenant = appUserRepository.findById(s.getPsychologistId()).orElse(null);
+        boolean isClinic = tenant != null && tenant.getAccountType() == AccountType.CLINIC;
+        return PaymentHistoryEntryDto.builder()
+                .id(s.getId())
+                .psychologistId(s.getPsychologistId())
+                .psychologistName(tenant != null ? tenant.getName() : "Unknown")
+                .psychologistEmail(tenant != null ? tenant.getUsername() : "")
+                .accountType(isClinic ? "CLINIC" : "INDIVIDUAL")
+                .upiTransactionRef(s.getUpiTransactionRef())
+                .amountClaimed(s.getAmountClaimed())
+                .status(s.getStatus())
+                .reviewNote(s.getReviewNote())
+                .reviewedAt(s.getReviewedAt())
+                .createdAt(s.getCreatedAt())
                 .build();
     }
 

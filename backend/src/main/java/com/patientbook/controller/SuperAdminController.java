@@ -3,6 +3,7 @@ package com.patientbook.controller;
 import com.patientbook.dto.PaymentSubmissionReviewDto;
 import com.patientbook.dto.RejectSubmissionRequest;
 import com.patientbook.dto.SubscriptionOverrideRequest;
+import com.patientbook.dto.SuperAdminDashboardStatsDto;
 import com.patientbook.dto.TenantSummaryDto;
 import com.patientbook.security.CurrentUserProvider;
 import com.patientbook.service.SuperAdminService;
@@ -31,6 +32,11 @@ public class SuperAdminController {
     @GetMapping("/tenants")
     public ResponseEntity<List<TenantSummaryDto>> listTenants() {
         return ResponseEntity.ok(superAdminService.listTenants());
+    }
+
+    @GetMapping("/dashboard/stats")
+    public ResponseEntity<SuperAdminDashboardStatsDto> dashboardStats() {
+        return ResponseEntity.ok(superAdminService.getDashboardStats());
     }
 
     @GetMapping("/tenants/{id}/payment-submissions")

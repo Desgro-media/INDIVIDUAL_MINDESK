@@ -34,8 +34,47 @@ export interface PaymentSubmissionReview {
     createdAt: string;
 }
 
+// Recent Payment History row — same shape as PaymentSubmissionReview minus
+// the screenshot (never needed once a submission isn't actively being
+// reviewed), plus accountType so the history feed can badge clinic vs
+// individual the same way the Tenants table does.
+export interface PaymentHistoryEntry {
+    id: number;
+    psychologistId: number;
+    psychologistName: string;
+    psychologistEmail: string;
+    accountType: 'INDIVIDUAL' | 'CLINIC';
+    upiTransactionRef: string;
+    amountClaimed: number | null;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    reviewNote: string | null;
+    reviewedAt: string | null;
+    createdAt: string;
+}
+
+export interface SuperAdminDashboardStats {
+    totalClinics: number;
+    totalIndividuals: number;
+    totalTenants: number;
+    activeSubscriptions: number;
+    trialingSubscriptions: number;
+    expiredSubscriptions: number;
+    cancelledSubscriptions: number;
+    totalPayments: number;
+    successfulPayments: number;
+    pendingPayments: number;
+    failedPayments: number;
+    totalRevenue: number;
+    recentPayments: PaymentHistoryEntry[];
+}
+
 export const listTenants = async (): Promise<TenantSummary[]> => {
     const res = await api.get('/superadmin/tenants');
+    return res.data;
+};
+
+export const getDashboardStats = async (): Promise<SuperAdminDashboardStats> => {
+    const res = await api.get('/superadmin/dashboard/stats');
     return res.data;
 };
 

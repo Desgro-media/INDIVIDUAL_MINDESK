@@ -84,6 +84,16 @@
   --grad-2-to:   #D22C7A;
   --grad-2-glow: rgba(210,44,122,0.35);
 
+  /* Superadmin dashboard hero row — teal (revenue) + amber (payments),
+     rounding the gradient duo above out to a 4-way palette so each KPI
+     tile reads as its own distinct category at a glance. */
+  --grad-3-from: #12B886;
+  --grad-3-to:   #0B7A5C;
+  --grad-3-glow: rgba(11,122,92,0.35);
+  --grad-4-from: #F5A524;
+  --grad-4-to:   #D97B0A;
+  --grad-4-glow: rgba(217,123,10,0.35);
+
   --chip-good-bg:  rgba(0,196,140,0.14);
   --chip-good-fg:  #0a8f63;
 
@@ -157,6 +167,13 @@
   --grad-2-from: #E85090;
   --grad-2-to:   #B82A73;
   --grad-2-glow: rgba(184,42,115,0.42);
+
+  --grad-3-from: #14C98F;
+  --grad-3-to:   #0E8F68;
+  --grad-3-glow: rgba(14,143,104,0.42);
+  --grad-4-from: #F7B733;
+  --grad-4-to:   #C97F12;
+  --grad-4-glow: rgba(201,127,18,0.42);
 
   --chip-good-bg:  rgba(0,212,160,0.14);
   --chip-good-fg:  #29e0ab;
@@ -1327,6 +1344,14 @@ a.card-hover:focus-visible { outline: 2px solid var(--accent); outline-offset: 3
   background: linear-gradient(135deg, var(--grad-2-from) 0%, var(--grad-2-to) 100%);
   box-shadow: 0 14px 32px var(--grad-2-glow), 0 4px 12px rgba(20,25,60,0.06);
 }
+.grad-card--3 {
+  background: linear-gradient(135deg, var(--grad-3-from) 0%, var(--grad-3-to) 100%);
+  box-shadow: 0 14px 32px var(--grad-3-glow), 0 4px 12px rgba(20,25,60,0.06);
+}
+.grad-card--4 {
+  background: linear-gradient(135deg, var(--grad-4-from) 0%, var(--grad-4-to) 100%);
+  box-shadow: 0 14px 32px var(--grad-4-glow), 0 4px 12px rgba(20,25,60,0.06);
+}
 a.grad-card:hover, .grad-card.card-hover:hover {
   transform: translateY(-4px);
 }
@@ -1335,6 +1360,12 @@ a.grad-card:hover, .grad-card.card-hover:hover {
 }
 .grad-card--2.card-hover:hover, a.grad-card--2:hover {
   box-shadow: 0 22px 44px var(--grad-2-glow), 0 8px 20px rgba(20,25,60,0.08);
+}
+.grad-card--3.card-hover:hover, a.grad-card--3:hover {
+  box-shadow: 0 22px 44px var(--grad-3-glow), 0 8px 20px rgba(20,25,60,0.08);
+}
+.grad-card--4.card-hover:hover, a.grad-card--4:hover {
+  box-shadow: 0 22px 44px var(--grad-4-glow), 0 8px 20px rgba(20,25,60,0.08);
 }
 a.grad-card { text-decoration: none; display: block; }
 a.grad-card:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
