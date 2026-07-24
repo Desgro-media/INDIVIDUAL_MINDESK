@@ -36,5 +36,10 @@ USER patientbook
 # Spring Boot runs on port 8086 (matches application.properties)
 EXPOSE 8086
 
+# JVM has no timezone override by default (Alpine's own default is UTC),
+# which silently skews every LocalDate.now()/LocalTime.now() call (holidays,
+# invoices, slot availability, etc.) away from the practice's real local
+# time. The app targets India — pin it explicitly rather than trust whatever
+# the host/container happens to default to.
 # Use the 'docker' Spring profile so it reads application-docker.properties
-ENTRYPOINT ["java", "-Dspring.profiles.active=docker", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Duser.timezone=Asia/Kolkata", "-Dspring.profiles.active=docker", "-jar", "app.jar"]

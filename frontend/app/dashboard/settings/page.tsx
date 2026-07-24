@@ -17,7 +17,6 @@ import {
   getBankAccounts, createBankAccount, updateBankAccount,
   setDefaultBankAccount, deleteBankAccount, BankAccount,
   getMyProfile, updateMyProfile, MyProfile,
-  getMyServices, saveMyServices, DoctorServicePrice,
   getAvailabilityBlocks, addAvailabilityBlocks, removeAvailabilityBlock, clearDayBlocks,
   getDateOverrides, addDateOverride, removeDateOverride, DateOverride, AvailabilityBlock,
 } from "../../../lib/profileApi";
@@ -200,85 +199,49 @@ function ProfileTab() {
   );
 }
 
-// ── Tab: Services & Pricing ──────────────────────────────────────────────────
-function ServicesPricingTab() {
-  const [services, setServices] = useState<DoctorServicePrice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [edited, setEdited] = useState<Record<number, { price: string; offered: boolean }>>({});
+// ── 12-hour time picker ──────────────────────────────────────────────────────
+// Native <input type="time"> renders in whatever 12h/24h format the OS locale
+// dictates — unreliable and often 24h regardless of what the user actually
+// wants to see. This always shows AM/PM, still storing a plain "HH:mm" 24h
+// string (what the scheduling API expects).
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
+const MINUTE_OPTIONS = [0, 15, 30, 45];
 
-  useEffect(() => {
-    getMyServices()
-      .then(data => {
-        setServices(data);
-        const init: Record<number, { price: string; offered: boolean }> = {};
-        data.forEach(s => { init[s.clinicServiceId] = { price: String(s.price), offered: s.offered }; });
-        setEdited(init);
-      })
-      .catch(() => toast.error('Failed to load services'))
-      .finally(() => setLoading(false));
-  }, []);
+function to12h(value24: string) {
+  const [hStr, mStr] = (value24 || '00:00').split(':');
+  const h = parseInt(hStr, 10) || 0;
+  const m = parseInt(mStr, 10) || 0;
+  const meridiem: 'AM' | 'PM' = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return { h12, m, meridiem };
+}
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const payload = services.map(s => ({
-        clinicServiceId: s.clinicServiceId,
-        price: parseFloat(edited[s.clinicServiceId]?.price || '0') || 0,
-        offered: edited[s.clinicServiceId]?.offered ?? s.offered,
-      }));
-      await saveMyServices(payload);
-      toast.success('Pricing saved');
-    } catch {
-      toast.error('Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  };
+function from24h(h12: number, m: number, meridiem: 'AM' | 'PM') {
+  const h = meridiem === 'PM' ? (h12 % 12) + 12 : h12 % 12;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+function TimeInput12h({ value, onChange, className = '' }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const { h12, m, meridiem } = to12h(value);
+  // Preserve any odd saved minute (e.g. legacy ":05") instead of silently rounding it away.
+  const minuteOptions = MINUTE_OPTIONS.includes(m) ? MINUTE_OPTIONS : [...MINUTE_OPTIONS, m].sort((a, b) => a - b);
 
   return (
-    <div>
-      <p className="text-xs text-gray-400 mb-4">Choose which services you offer and set your price for each. Leave price as 0 to use the catalog default.</p>
-      {services.length === 0 && (
-        <p className="text-sm text-gray-400 py-8 text-center">No services configured yet. Add services on the Services page first.</p>
-      )}
-      <div className="space-y-3">
-        {services.map(s => {
-          const e = edited[s.clinicServiceId] ?? { price: String(s.price), offered: s.offered };
-          return (
-            <div key={s.clinicServiceId} className={`flex items-center gap-4 p-4 rounded-xl border transition-all ${e.offered ? 'border-indigo-200 bg-indigo-50' : 'border-gray-100 bg-gray-50'}`}>
-              <button
-                onClick={() => setEdited(prev => ({ ...prev, [s.clinicServiceId]: { ...e, offered: !e.offered } }))}
-                className="flex-shrink-0"
-              >
-                {e.offered
-                  ? <ToggleRight className="w-6 h-6 text-indigo-600" />
-                  : <ToggleLeft className="w-6 h-6 text-gray-300" />}
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900 text-sm">{s.serviceName}</p>
-                <p className="text-xs text-gray-400">{s.serviceDuration}</p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs text-gray-400">₹</span>
-                <input
-                  type="number" min="0" step="0.01"
-                  className="w-24 text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-                  value={e.price}
-                  onChange={ev => setEdited(prev => ({ ...prev, [s.clinicServiceId]: { ...e, price: ev.target.value } }))}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {services.length > 0 && (
-        <button onClick={handleSave} disabled={saving} className="btn-nm-accent" style={{ marginTop: 20, padding: '10px 20px', fontSize: 13 }}>
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Pricing
-        </button>
-      )}
+    <div className={`flex items-center gap-1 border border-indigo-200 rounded-xl px-2 bg-white ${className}`}>
+      <select aria-label="Hour" value={h12} onChange={e => onChange(from24h(Number(e.target.value), m, meridiem))}
+        className="text-sm font-medium bg-transparent outline-none cursor-pointer py-2">
+        {HOUR_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span className="text-gray-400">:</span>
+      <select aria-label="Minute" value={m} onChange={e => onChange(from24h(h12, Number(e.target.value), meridiem))}
+        className="text-sm font-medium bg-transparent outline-none cursor-pointer py-2">
+        {minuteOptions.map(mm => <option key={mm} value={mm}>{String(mm).padStart(2, '0')}</option>)}
+      </select>
+      <select aria-label="AM or PM" value={meridiem} onChange={e => onChange(from24h(h12, m, e.target.value as 'AM' | 'PM'))}
+        className="text-sm font-semibold bg-transparent outline-none cursor-pointer text-indigo-600 py-2">
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
     </div>
   );
 }
@@ -290,7 +253,7 @@ function AvailabilityTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [addingOverride, setAddingOverride] = useState(false);
-  const [overrideForm, setOverrideForm] = useState({ date: '', time: '', available: true });
+  const [overrideForm, setOverrideForm] = useState({ date: '', time: '09:00', available: true });
 
   const [blockForm, setBlockForm] = useState({
     startTime: '09:00',
@@ -383,7 +346,7 @@ function AvailabilityTab() {
       });
       await reload();
       setAddingOverride(false);
-      setOverrideForm({ date: '', time: '', available: true });
+      setOverrideForm({ date: '', time: '09:00', available: true });
       toast.success('Override added');
     } catch {
       toast.error('Failed to add override');
@@ -426,16 +389,12 @@ function AvailabilityTab() {
         <div className="flex flex-wrap items-end gap-3 mb-4">
           <div>
             <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold tracking-wider">From</label>
-            <input type="time" value={blockForm.startTime}
-              onChange={e => setBlockForm(f => ({ ...f, startTime: e.target.value }))}
-              className="text-sm border border-indigo-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400 bg-white font-medium" />
+            <TimeInput12h value={blockForm.startTime} onChange={v => setBlockForm(f => ({ ...f, startTime: v }))} />
           </div>
           <span className="text-gray-400 text-sm pb-2">→</span>
           <div>
             <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold tracking-wider">To</label>
-            <input type="time" value={blockForm.endTime}
-              onChange={e => setBlockForm(f => ({ ...f, endTime: e.target.value }))}
-              className="text-sm border border-indigo-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-400 bg-white font-medium" />
+            <TimeInput12h value={blockForm.endTime} onChange={v => setBlockForm(f => ({ ...f, endTime: v }))} />
           </div>
           <div>
             <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold tracking-wider">Session length</label>
@@ -558,8 +517,7 @@ function AvailabilityTab() {
               {overrideForm.available && (
                 <div>
                   <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold">Slot Time</label>
-                  <input type="time" className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-                    value={overrideForm.time} onChange={e => setOverrideForm(f => ({ ...f, time: e.target.value }))} />
+                  <TimeInput12h className="border-gray-200" value={overrideForm.time} onChange={v => setOverrideForm(f => ({ ...f, time: v }))} />
                 </div>
               )}
             </div>
@@ -976,7 +934,6 @@ function HolidaysCalendar({ holidays, onToggle }: { holidays: string[]; onToggle
 // accounts, holidays) and require the SETTINGS permission for clinic staff.
 const TABS = [
   { key: 'profile',      label: 'Profile',              selfScoped: true },
-  { key: 'services',     label: 'Services & Pricing',   selfScoped: true },
   { key: 'availability', label: 'Availability',         selfScoped: true },
   { key: 'practice',     label: 'Practice Info',        selfScoped: false },
   { key: 'payment',      label: 'Payment & Banking',    selfScoped: false },
@@ -1022,7 +979,7 @@ export default function SettingsPage() {
     <div style={{ maxWidth: 820 }} className="anim-fade-up">
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-1)", letterSpacing: "-0.03em", marginBottom: 4 }}>Settings</h1>
-        <p style={{ fontSize: 14, color: "var(--text-3)" }}>Your profile, services, availability, and practice details.</p>
+        <p style={{ fontSize: 14, color: "var(--text-3)" }}>Your profile, availability, and practice details.</p>
       </div>
 
       <div className="soft-card-2" style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 14, marginBottom: 24, flexWrap: 'wrap', width: 'fit-content' }}>
@@ -1048,7 +1005,6 @@ export default function SettingsPage() {
           </p>
         )}
         {tab === 'profile'      && <ProfileTab />}
-        {tab === 'services'     && <ServicesPricingTab />}
         {tab === 'availability' && <AvailabilityTab />}
         {tab === 'practice'     && <PracticeInfoTab />}
         {tab === 'payment'      && <BankAccountsSection />}
