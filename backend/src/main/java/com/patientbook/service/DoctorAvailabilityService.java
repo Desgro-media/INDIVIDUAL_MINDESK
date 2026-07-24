@@ -30,7 +30,43 @@ public class DoctorAvailabilityService {
     private final DoctorAvailabilityBlockRepository blockRepository;
 
     // ── Public: get services offered by a doctor (for booking form step 3) ───
+    // Individual practitioners have no separate "offered" opt-in step —
+    // every Active catalog service is bookable automatically, using a
+    // per-doctor price override if one was ever saved (legacy data), else
+    // the catalog's own fee. This keeps the Services page's "Active =
+    // visible on the booking page" copy literally true for them.
+    // Clinic doctors/staff still opt in per-service via DoctorServicePrice,
+    // since several practitioners share one catalog and don't all offer
+    // the same things.
     public List<DoctorServicePriceDto> getDoctorOfferedServices(Long psychologistId) {
+        AppUser doctor = userRepository.findById(psychologistId)
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found: " + psychologistId));
+        boolean isIndividual = doctor.getTenantId() == null && doctor.getAccountType() != AccountType.CLINIC;
+
+        if (isIndividual) {
+            Map<Long, DoctorServicePrice> overrides = servicePriceRepository.findByPsychologistId(psychologistId).stream()
+                    .collect(Collectors.toMap(dsp -> dsp.getClinicService().getId(), dsp -> dsp));
+            return clinicServiceRepository.findByPsychologistIdAndActiveTrueOrderByDisplayOrderAscCreatedAtAsc(psychologistId).stream()
+                    .filter(svc -> {
+                        DoctorServicePrice override = overrides.get(svc.getId());
+                        return override == null || override.isOffered();
+                    })
+                    .map(svc -> {
+                        DoctorServicePrice override = overrides.get(svc.getId());
+                        return DoctorServicePriceDto.builder()
+                                .id(override != null ? override.getId() : null)
+                                .clinicServiceId(svc.getId())
+                                .serviceName(svc.getName())
+                                .serviceDescription(svc.getDescription())
+                                .serviceDuration(svc.getDuration())
+                                .serviceIcon(svc.getIcon())
+                                .price(override != null ? override.getPrice() : (svc.getFee() != null ? svc.getFee() : BigDecimal.ZERO))
+                                .offered(true)
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+        }
+
         return servicePriceRepository.findByPsychologistIdAndOfferedTrue(psychologistId).stream()
                 .map(dsp -> DoctorServicePriceDto.builder()
                         .id(dsp.getId())
@@ -284,9 +320,13 @@ public class DoctorAvailabilityService {
             }
         }
 
-        // 4. Remove already-booked slots
+        // 4. Remove already-booked slots, and — for today — slots whose start
+        // time has already passed, so patients/staff can't book into the past.
+        boolean isToday = date.isEqual(LocalDate.now());
+        LocalTime now = LocalTime.now();
         return slots.stream()
                 .filter(s -> !bookedSlots.contains(s))
+                .filter(s -> !isToday || LocalTime.parse(s).isAfter(now))
                 .sorted()
                 .collect(Collectors.toList());
     }

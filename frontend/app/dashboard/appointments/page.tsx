@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Check, X, Search, RefreshCw, Calendar, Clock,
   AlertCircle, Phone, Mail, FileText, Tag,
@@ -83,8 +84,8 @@ export default function AppointmentsPage() {
       await api.patch(`/appointments/${verifyDialog.id}?status=CONFIRMED`);
       showToast("Payment verified and appointment confirmed!", "success");
       setVerifyDialog({ open: false, id: null });
+      if (selected?.id === verifyDialog.id) setSelected(null);
       await fetchAppointments();
-      if (selected?.id === verifyDialog.id) setSelected(prev => prev ? { ...prev, status: "CONFIRMED" } : null);
     } catch { showToast("Failed to confirm", "error"); }
     setActionLoading(false);
   };
@@ -94,8 +95,8 @@ export default function AppointmentsPage() {
     try {
       await api.patch(`/appointments/${id}?status=CONFIRMED`);
       showToast("Appointment confirmed!", "success");
+      if (selected?.id === id) setSelected(null);
       await fetchAppointments();
-      if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: "CONFIRMED" } : null);
     } catch { showToast("Failed to confirm", "error"); }
     setActionLoading(false);
   };
@@ -109,8 +110,8 @@ export default function AppointmentsPage() {
     try {
       await api.patch(`/appointments/${id}?status=COMPLETED`);
       showToast("Marked as completed!", "success");
+      if (selected?.id === id) setSelected(null);
       await fetchAppointments();
-      if (selected?.id === id) setSelected(prev => prev ? { ...prev, status: "COMPLETED" } : null);
     } catch { showToast("Failed to update", "error"); }
     setActionLoading(false);
   };
@@ -231,7 +232,7 @@ export default function AppointmentsPage() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }} className="anim-fade-up">
 
       {/* Toast */}
-      {toast && (
+      {toast && typeof document !== "undefined" && createPortal(
         <div className="soft-card anim-fade-in" style={{
           position: "fixed", top: 24, right: 24, zIndex: 100,
           display: "flex", alignItems: "center", gap: 10,
@@ -243,7 +244,8 @@ export default function AppointmentsPage() {
             ? <CheckCircle2 style={{ width: 16, height: 16 }} />
             : <AlertCircle style={{ width: 16, height: 16 }} />}
           {toast.text}
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Filter Tabs + Search */}
@@ -541,7 +543,7 @@ export default function AppointmentsPage() {
       </div>
 
       {/* Detail Side Panel */}
-      {selected && (
+      {selected && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 40, display: "flex", justifyContent: "flex-end" }} onClick={() => setSelected(null)}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.2)", backdropFilter: "blur(2px)" }} />
           <div
@@ -731,11 +733,12 @@ export default function AppointmentsPage() {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Cancel Dialog */}
-      {cancelDialog.open && (
+      {cancelDialog.open && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setCancelDialog({ open: false, id: null })}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)" }} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 420, padding: "28px 24px" }} onClick={e => e.stopPropagation()}>
@@ -772,11 +775,12 @@ export default function AppointmentsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Convert Demo Dialog */}
-      {convertDialog.open && (
+      {convertDialog.open && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setConvertDialog({ open: false, id: null })}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)" }} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 440, padding: "28px 24px" }} onClick={e => e.stopPropagation()}>
@@ -840,11 +844,12 @@ export default function AppointmentsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Verify Dialog */}
-      {verifyDialog.open && (
+      {verifyDialog.open && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setVerifyDialog({ open: false, id: null })}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)" }} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 500, padding: "28px 24px" }} onClick={e => e.stopPropagation()}>
@@ -882,7 +887,8 @@ export default function AppointmentsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
