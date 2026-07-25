@@ -62,9 +62,17 @@ public class InvoiceService {
                 // that predate assignedDoctorId (individuals: same value).
                 Long pricingDoctorId = appointment.getAssignedDoctorId() != null
                         ? appointment.getAssignedDoctorId() : appointment.getPsychologistId();
-                fee = doctorAvailabilityService.resolvePrice(appointment.getPsychologistId(), pricingDoctorId, serviceId);
+                String mode = appointment.getMode() != null ? appointment.getMode() : "OFFLINE";
+                fee = doctorAvailabilityService.resolveBookablePrice(appointment.getPsychologistId(), pricingDoctorId, serviceId, mode);
             } catch (NumberFormatException ignored) {
                 // sessionType is a name string, not an ID
+            } catch (IllegalArgumentException ignored) {
+                // The doctor's offerings changed since this appointment was
+                // created (e.g. convertDemoToAppointment/recordPastSession,
+                // which don't pre-validate the way live booking does) —
+                // degrade to a zero fee rather than fail invoice creation
+                // for an appointment that already exists; an admin can
+                // reprice via InvoiceService.updateAmount.
             }
         }
 
@@ -296,6 +304,7 @@ public class InvoiceService {
                 .patientName(invoice.getPatient().getName())
                 .patientEmail(invoice.getPatient().getEmail())
                 .sessionType(invoice.getAppointment().getSessionType())
+                .mode(invoice.getAppointment().getMode() != null ? invoice.getAppointment().getMode() : "OFFLINE")
                 .appointmentDate(invoice.getAppointment().getAppointmentDate())
                 .amount(invoice.getAmount())
                 .discountAmount(discount)

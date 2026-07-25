@@ -111,21 +111,35 @@ public class PublicController {
         return ResponseEntity.ok(doctorAvailabilityService.getDoctorOfferedServices(doctorId));
     }
 
+    // Lets the booking calendar disable days that have no chance of a slot
+    // for the selected mode, before the user even picks a date.
+    @GetMapping("/availability-summary")
+    public ResponseEntity<com.patientbook.dto.AvailabilitySummaryDto> getAvailabilitySummary(
+            @PathVariable String slug, @RequestParam(required = false) Long staffId,
+            @RequestParam(required = false) String mode) {
+        AppUser owner = resolveOwner(slug);
+        Long doctorId = staffResolutionService.resolveBookableDoctorId(owner, staffId);
+        return ResponseEntity.ok(doctorAvailabilityService.getAvailabilitySummary(doctorId, mode));
+    }
+
     @GetMapping("/slots")
     public ResponseEntity<List<String>> getSlots(
-            @PathVariable String slug, @RequestParam LocalDate date, @RequestParam(required = false) Long staffId) {
+            @PathVariable String slug, @RequestParam LocalDate date, @RequestParam(required = false) Long staffId,
+            @RequestParam(required = false) String mode) {
         AppUser owner = resolveOwner(slug);
         Long doctorId = staffResolutionService.resolveBookableDoctorId(owner, staffId);
         // Holiday/closure is a clinic-wide setting; slot-conflict is scoped
         // to the specific practitioner so two different doctors in the same
-        // clinic can be booked at the same time.
+        // clinic can be booked at the same time. Booked-slot exclusion is
+        // deliberately mode-agnostic (see DoctorAvailabilityService) — only
+        // the open-window calendar lookup below is mode-filtered.
         boolean isHoliday = clinicHolidayRepository.findByHolidayDateAndPsychologistId(date, owner.getId()).isPresent();
         java.util.Set<String> booked = appointmentRepository.findByAppointmentDateAndAssignedDoctorId(date, doctorId)
                 .stream()
                 .filter(a -> !"CANCELLED".equals(a.getStatus()))
                 .map(a -> a.getStartTime().toString().substring(0, 5))
                 .collect(Collectors.toSet());
-        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(doctorId, date, booked, isHoliday));
+        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(doctorId, date, booked, isHoliday, mode));
     }
 
     @GetMapping("/holidays")

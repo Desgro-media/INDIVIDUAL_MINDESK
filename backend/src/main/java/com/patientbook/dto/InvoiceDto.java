@@ -16,6 +16,7 @@ public class InvoiceDto {
     private String patientName;
     private String patientEmail;
     private String sessionType;
+    private String mode; // ONLINE or OFFLINE
     private LocalDate appointmentDate;
     private BigDecimal amount;        // Base fee
     private BigDecimal discountAmount; // Doctor's discount (0 if none)

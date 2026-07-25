@@ -4,8 +4,11 @@ import api from './api';
 // account — there is no id parameter, because there is no one else's data
 // to manage.
 
-export const getMySlots = async (date: string): Promise<string[]> => {
-    const res = await api.get(`/me/slots?date=${date}`);
+// mode is optional — omit it for the mode-agnostic manual-scheduling flows
+// that haven't been updated to collect it yet; the backend defaults to
+// OFFLINE server-side.
+export const getMySlots = async (date: string, mode?: 'ONLINE' | 'OFFLINE'): Promise<string[]> => {
+    const res = await api.get(`/me/slots?date=${date}${mode ? `&mode=${mode}` : ''}`);
     return res.data;
 };
 
@@ -18,8 +21,10 @@ export interface DoctorServicePrice {
     serviceDescription: string;
     serviceDuration: string;
     serviceIcon: string;
-    price: number;
-    offered: boolean;
+    onlinePrice: number | null;
+    offlinePrice: number | null;
+    onlineOffered: boolean;
+    offlineOffered: boolean;
 }
 
 export const getMyServices = async (): Promise<DoctorServicePrice[]> => {
@@ -27,7 +32,13 @@ export const getMyServices = async (): Promise<DoctorServicePrice[]> => {
     return res.data;
 };
 
-export const saveMyServices = async (services: { clinicServiceId: number; price: number; offered: boolean }[]): Promise<DoctorServicePrice[]> => {
+export const saveMyServices = async (services: {
+    clinicServiceId: number;
+    onlinePrice: number;
+    offlinePrice: number;
+    onlineOffered: boolean;
+    offlineOffered: boolean;
+}[]): Promise<DoctorServicePrice[]> => {
     const res = await api.put('/me/services', services);
     return res.data;
 };
@@ -40,8 +51,12 @@ export interface AvailabilityBlock {
     startTime: string; // "09:00"
     endTime: string;   // "11:00"
     intervalMinutes: number;
+    mode: 'ONLINE' | 'OFFLINE';
 }
 
+// Returns blocks for BOTH calendars in one call, each tagged with `mode` —
+// group/filter client-side per the active Settings tab rather than
+// refetching per tab switch.
 export const getAvailabilityBlocks = async (): Promise<Record<string, AvailabilityBlock[]>> => {
     const res = await api.get('/me/availability-blocks');
     return res.data;
@@ -51,10 +66,11 @@ export const addAvailabilityBlocks = async (
     daysOfWeek: string[],
     startTime: string,
     endTime: string,
-    intervalMinutes: number
+    intervalMinutes: number,
+    mode: 'ONLINE' | 'OFFLINE'
 ): Promise<AvailabilityBlock[]> => {
     const res = await api.post('/me/availability-blocks', {
-        daysOfWeek, startTime, endTime, intervalMinutes,
+        daysOfWeek, startTime, endTime, intervalMinutes, mode,
     });
     return res.data;
 };
@@ -63,8 +79,9 @@ export const removeAvailabilityBlock = async (blockId: number): Promise<void> =>
     await api.delete(`/me/availability-blocks/${blockId}`);
 };
 
-export const clearDayBlocks = async (dayOfWeek: string): Promise<void> => {
-    await api.delete(`/me/availability-blocks/day/${dayOfWeek}`);
+// Scoped by mode — clearing one calendar's day never touches the other.
+export const clearDayBlocks = async (dayOfWeek: string, mode: 'ONLINE' | 'OFFLINE'): Promise<void> => {
+    await api.delete(`/me/availability-blocks/day/${dayOfWeek}?mode=${mode}`);
 };
 
 // ── Date Overrides ───────────────────────────────────────────────────────────
@@ -74,6 +91,9 @@ export interface DateOverride {
     specificDate: string;
     slotTime: string | null;
     available: boolean;
+    // null = applies to both calendars (whole-day leave/holiday only —
+    // any override with a slotTime must carry an explicit mode).
+    mode: 'ONLINE' | 'OFFLINE' | null;
 }
 
 export const getDateOverrides = async (): Promise<DateOverride[]> => {
@@ -81,7 +101,7 @@ export const getDateOverrides = async (): Promise<DateOverride[]> => {
     return res.data;
 };
 
-export const addDateOverride = async (data: { specificDate: string; slotTime?: string; available: boolean }): Promise<DateOverride> => {
+export const addDateOverride = async (data: { specificDate: string; slotTime?: string; available: boolean; mode?: 'ONLINE' | 'OFFLINE' }): Promise<DateOverride> => {
     const res = await api.post('/me/date-overrides', data);
     return res.data;
 };

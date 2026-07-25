@@ -9,7 +9,7 @@ import {
   Search, ArrowDownUp, AlertCircle, Phone, Mail, Check,
   Download, Plus, BrainCircuit, TrendingUp, Star,
   Lock, Pencil, Save, Trash2, DollarSign, Smile, X, RefreshCw,
-  Paperclip, Loader2, UploadCloud,
+  Paperclip, Loader2, UploadCloud, Video, MapPin,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -189,7 +189,7 @@ function MiniCalendar({ value, onChange, maxDate }: {
 type Patient = { id: number; name: string; email: string; phone: string; createdAt: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string; };
 type Appointment = {
   id: number; appointmentDate: string; startTime: string; endTime: string;
-  status: string; sessionType?: string; notes?: string; cancellationReason?: string;
+  status: string; sessionType?: string; mode?: string; notes?: string; cancellationReason?: string;
   rating?: number; feedback?: string;
 };
 type SessionNote = { id: number; appointmentId: number; content?: string; subjective?: string; objective?: string; assessment?: string; plan?: string; updatedAt: string; };
@@ -201,6 +201,28 @@ type Attachment  = { id: number; patientId: number; fileName: string; fileType: 
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB — mirrors the backend's PatientAttachmentService cap
 const ALLOWED_ATTACHMENT_EXTENSIONS = ["pdf", "png", "jpg", "jpeg", "gif", "webp", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv"];
+
+// Shared online/in-person toggle for the manual scheduling, past-session,
+// and edit-session forms below.
+function ModeToggle({ value, onChange }: { value: "ONLINE" | "OFFLINE"; onChange: (m: "ONLINE" | "OFFLINE") => void }) {
+  return (
+    <div style={{ display: "flex", gap: 10 }}>
+      {([
+        { v: "OFFLINE" as const, label: "In-person", Icon: MapPin },
+        { v: "ONLINE" as const, label: "Online", Icon: Video },
+      ]).map(({ v, label, Icon }) => (
+        <button key={v} type="button" onClick={() => onChange(v)}
+          style={{
+            flex: 1, padding: "9px 0", borderRadius: 10, border: `1.5px solid ${value === v ? "var(--accent)" : "transparent"}`,
+            background: value === v ? "var(--accent-surface)" : "transparent", color: value === v ? "var(--accent)" : "var(--text-2)",
+            fontWeight: 600, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+          <Icon style={{ width: 13, height: 13 }} /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -253,6 +275,7 @@ export default function ClientTimelinePage() {
   const [schedDate, setSchedDate] = useState("");
   const [schedTime, setSchedTime] = useState("");
   const [schedType, setSchedType] = useState("");
+  const [schedMode, setSchedMode] = useState<"ONLINE" | "OFFLINE">("OFFLINE");
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [schedSaving, setSchedSaving] = useState(false);
 
@@ -260,6 +283,7 @@ export default function ClientTimelinePage() {
   const [pastDate, setPastDate]             = useState("");
   const [pastTime, setPastTime]             = useState("");
   const [pastType, setPastType]             = useState("");
+  const [pastMode, setPastMode]             = useState<"ONLINE" | "OFFLINE">("OFFLINE");
   const [pastStatus, setPastStatus]         = useState("COMPLETED");
   const [pastNotes, setPastNotes]           = useState("");
   const [pastSaving, setPastSaving]         = useState(false);
@@ -288,7 +312,7 @@ export default function ClientTimelinePage() {
   // Edit session state
   const [editSessionOpen, setEditSessionOpen]   = useState(false);
   const [editSessionId, setEditSessionId]       = useState<number | null>(null);
-  const [editSessionForm, setEditSessionForm]   = useState({ appointmentDate: "", startTime: "", sessionType: "", notes: "" });
+  const [editSessionForm, setEditSessionForm]   = useState({ appointmentDate: "", startTime: "", sessionType: "", notes: "", mode: "" });
   const [editSessionSaving, setEditSessionSaving] = useState(false);
 
   // Schedule modal payment state
@@ -412,6 +436,7 @@ export default function ClientTimelinePage() {
         appointmentDate: editSessionForm.appointmentDate || undefined,
         startTime:       editSessionForm.startTime       || undefined,
         sessionType:     editSessionForm.sessionType     || undefined,
+        mode:            editSessionForm.mode            || undefined,
         notes:           editSessionForm.notes,
       });
       setAppointments(prev => prev.map(a => a.id === editSessionId ? { ...a, ...res.data } : a));
@@ -477,9 +502,9 @@ export default function ClientTimelinePage() {
     }
   };
 
-  const fetchAvailableSlots = async (dateStr: string) => {
+  const fetchAvailableSlots = async (dateStr: string, mode: "ONLINE" | "OFFLINE" = schedMode) => {
     try {
-      const res = await api.get(`/me/slots?date=${dateStr}`);
+      const res = await api.get(`/me/slots?date=${dateStr}&mode=${mode}`);
       setAvailableSlots(Array.isArray(res.data) ? res.data : []);
     } catch {
       setAvailableSlots([]);
@@ -519,12 +544,13 @@ export default function ClientTimelinePage() {
         appointmentDate: schedDate,
         startTime: schedTime,
         sessionType: schedType,
+        mode: schedMode,
         notes: ""
       });
       setAppointments(prev => [res.data, ...prev]);
       await applyPaymentAfterCreate(res.data.id, schedPayStatus, schedPayAmount, schedPayMethod, schedBankAccountId, schedBankAccountName);
       setScheduleModalOpen(false);
-      setSchedDate(""); setSchedTime(""); setSchedType("");
+      setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE");
       setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
       setSchedBankAccountId(""); setSchedBankAccountName("");
     } catch (err) {
@@ -544,13 +570,14 @@ export default function ClientTimelinePage() {
         appointmentDate: pastDate,
         startTime:       pastTime,
         sessionType:     pastType,
+        mode:            pastMode,
         status:          pastStatus,
         notes:           pastNotes,
       });
       setAppointments(prev => [res.data, ...prev]);
       await applyPaymentAfterCreate(res.data.id, pastPayStatus, pastPayAmount, pastPayMethod, pastBankAccountId, pastBankAccountName);
       setPastModalOpen(false);
-      setPastDate(""); setPastTime(""); setPastType(""); setPastNotes(""); setPastStatus("COMPLETED");
+      setPastDate(""); setPastTime(""); setPastType(""); setPastMode("OFFLINE"); setPastNotes(""); setPastStatus("COMPLETED");
       setPastPayStatus("PAID"); setPastPayAmount(""); setPastPayMethod("CASH");
       setPastBankAccountId(""); setPastBankAccountName("");
     } catch (err: any) {
@@ -1236,6 +1263,7 @@ export default function ClientTimelinePage() {
                                 startTime: apt.startTime,
                                 sessionType: apt.sessionType || "",
                                 notes: apt.notes || "",
+                                mode: "",
                               });
                               setEditSessionOpen(true);
                             }}
@@ -1550,8 +1578,19 @@ export default function ClientTimelinePage() {
               </div>
 
               <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Mode</label>
+                <ModeToggle value={schedMode} onChange={m => {
+                  setSchedMode(m);
+                  setSchedTime("");
+                  // Online and in-person can be genuinely separate calendars —
+                  // re-fetch slots for the newly selected mode's calendar.
+                  if (schedDate) fetchAvailableSlots(schedDate, m);
+                }} />
+              </div>
+
+              <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Date</label>
-                <input 
+                <input
                   type="date"
                   className="nm-input"
                   style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
@@ -1560,7 +1599,7 @@ export default function ClientTimelinePage() {
                   onChange={e => {
                     setSchedDate(e.target.value);
                     setSchedTime("");
-                    fetchAvailableSlots(e.target.value);
+                    fetchAvailableSlots(e.target.value, schedMode);
                   }}
                 />
               </div>
@@ -1667,6 +1706,11 @@ export default function ClientTimelinePage() {
                   <option value="">-- Choose a service --</option>
                   {services.map(s => <option key={s.id} value={s.id.toString()}>{s.name}</option>)}
                 </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Mode</label>
+                <ModeToggle value={pastMode} onChange={setPastMode} />
               </div>
 
               <div>
@@ -1847,6 +1891,15 @@ export default function ClientTimelinePage() {
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}>
                   <option value="">-- Keep existing --</option>
                   {services.map(s => <option key={s.id} value={s.id.toString()}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6, textTransform: "uppercase" }}>Mode</label>
+                <select className="nm-input" value={editSessionForm.mode} onChange={e => setEditSessionForm(p => ({ ...p, mode: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 12, color: "var(--text-1)" }}>
+                  <option value="">-- Keep existing --</option>
+                  <option value="OFFLINE">In-person</option>
+                  <option value="ONLINE">Online</option>
                 </select>
               </div>
               <div>

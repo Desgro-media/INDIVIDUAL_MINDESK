@@ -14,6 +14,8 @@ public class DoctorServicePriceDto {
     private String serviceDescription;
     private String serviceDuration;
     private String serviceIcon;
-    private BigDecimal price;
-    private boolean offered;
+    private BigDecimal onlinePrice;
+    private BigDecimal offlinePrice;
+    private boolean onlineOffered;
+    private boolean offlineOffered;
 }

@@ -8,13 +8,25 @@ import {
   User, Mail, Phone, ChevronRight, ChevronLeft,
   Calendar, Clock, CheckCircle2, Sparkles, Heart, Brain,
   Users, RefreshCw, HelpCircle, Loader2, ArrowLeft, Check,
-  ClipboardList, Home, Baby, AlertCircle, Briefcase,
+  ClipboardList, Home, Baby, AlertCircle, Briefcase, Video, MapPin,
 } from "lucide-react";
 import publicApi from "../../../lib/publicApi";
 import {
   format, isBefore, isToday, isSameDay,
   startOfMonth, endOfMonth, eachDayOfInterval, getDay
 } from "date-fns";
+
+type SessionMode = "ONLINE" | "OFFLINE";
+
+// The wizard's steps are a computed sequence rather than hardcoded numbers,
+// so optional steps (Practitioner for clinics, Mode only when a doctor
+// actually offers both) can be inserted/omitted without any off-by-one
+// risk in navigation or the step-dot count. See stepKeys below.
+type StepKey = "details" | "practitioner" | "mode" | "session" | "schedule" | "confirm";
+const STEP_LABELS: Record<StepKey, string> = {
+  details: "Details", practitioner: "Practitioner", mode: "Mode",
+  session: "Session", schedule: "Schedule", confirm: "Confirm",
+};
 
 function ServiceIcon({ name, className = "w-4 h-4" }: { name: string; className?: string }) {
   const icons: Record<string, React.ReactNode> = {
@@ -41,8 +53,10 @@ interface ApiService {
   serviceDescription: string;
   serviceDuration: string;
   serviceIcon: string;
-  price: number;
-  offered: boolean;
+  onlinePrice: number | null;
+  offlinePrice: number | null;
+  onlineOffered: boolean;
+  offlineOffered: boolean;
 }
 
 interface PractitionerInfo {
@@ -67,7 +81,19 @@ interface StaffMember {
   profileImageUrl: string | null;
 }
 
-function MiniCalendar({ selected, onSelect, holidays = [] }: { selected: Date | null; onSelect: (d: Date) => void; holidays?: string[] }) {
+interface AvailabilitySummary {
+  enabledWeekdays: string[]; // "MONDAY".."SUNDAY" — days with at least one recurring block/slot for this mode
+  extraDates: string[];      // "yyyy-MM-dd" — ad hoc extra slot on an otherwise-off day
+  blockedDates: string[];    // "yyyy-MM-dd" — whole-day block on an otherwise-on day
+}
+
+function MiniCalendar({ selected, onSelect, holidays = [], availability }: {
+  selected: Date | null; onSelect: (d: Date) => void; holidays?: string[];
+  // null = not loaded yet (or not applicable) — falls back to only
+  // past/holiday disabling rather than flashing every day as unavailable
+  // while the fetch is in flight.
+  availability?: AvailabilitySummary | null;
+}) {
   const [viewDate, setViewDate] = useState(new Date());
   const today = new Date();
   const days = eachDayOfInterval({ start: startOfMonth(viewDate), end: endOfMonth(viewDate) });
@@ -95,7 +121,17 @@ function MiniCalendar({ selected, onSelect, holidays = [] }: { selected: Date | 
           const dateStr = format(day, "yyyy-MM-dd");
           const isHoliday = holidays.includes(dateStr);
           const past   = isBefore(day, today) && !isToday(day);
-          const disabled = past || isHoliday;
+          // Schedule-aware disabling: a specific-date override always wins
+          // (blockedDates closes an otherwise-on day, extraDates opens an
+          // otherwise-off one); absent either, fall back to the recurring
+          // weekday pattern. Only applied once availability has actually
+          // loaded — while null, every future/non-holiday day stays
+          // clickable, same as before this feature existed.
+          const noSchedule = availability
+            ? availability.blockedDates.includes(dateStr)
+              || (!availability.extraDates.includes(dateStr) && !availability.enabledWeekdays.includes(format(day, "EEEE").toUpperCase()))
+            : false;
+          const disabled = past || isHoliday || noSchedule;
           const sel    = selected ? isSameDay(day, selected) : false;
           const todayD = isToday(day);
           return (
@@ -104,7 +140,7 @@ function MiniCalendar({ selected, onSelect, holidays = [] }: { selected: Date | 
                 disabled={disabled}
                 onClick={() => onSelect(day)}
                 className={`cal-day-nm ${disabled ? "cal-disabled" : ""} ${sel ? "cal-selected" : ""} ${todayD && !sel ? "cal-today" : ""}`}
-                title={isHoliday ? "Not available" : undefined}
+                title={isHoliday ? "Not available" : (noSchedule && !past ? "Not scheduled this day" : undefined)}
               >
                 {format(day, "d")}
               </button>
@@ -179,7 +215,7 @@ export default function BookingPage() {
   const params = useParams();
   const slug = String(params.slug);
 
-  const [step, setStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState<StepKey>("details");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notFound, setNotFound] = useState(false);
@@ -193,6 +229,9 @@ export default function BookingPage() {
 
   const [form, setForm] = useState({ patientName: "", patientEmail: "", patientPhone: "", notes: "" });
   const [formErr, setFormErr] = useState<Record<string, string>>({});
+
+  const [selectedMode, setSelectedMode] = useState<SessionMode | null>(null);
+  const [availabilitySummary, setAvailabilitySummary] = useState<AvailabilitySummary | null>(null);
 
   const [selectedSession, setSelectedSession] = useState<string>("");
   const [selectedSessionName, setSelectedSessionName] = useState<string>("");
@@ -213,7 +252,20 @@ export default function BookingPage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
-  const [pickerActive, setPickerActive] = useState(false);
+
+  // Which steps actually exist for THIS booking. 'mode' only appears once
+  // the resolved doctor's offered-services list shows both an online and
+  // an offline option somewhere — a doctor who never touches the feature
+  // has every service one-mode-only, so this list (and the step count
+  // shown in the dots) is byte-for-byte identical to before.
+  const supportsOnline = sessionTypes.some(s => s.onlineOffered);
+  const supportsOffline = sessionTypes.some(s => s.offlineOffered);
+  const stepKeys: StepKey[] = [
+    "details",
+    ...(isClinic ? (["practitioner"] as StepKey[]) : []),
+    ...(supportsOnline && supportsOffline ? (["mode"] as StepKey[]) : []),
+    "session", "schedule", "confirm",
+  ];
 
   useEffect(() => {
     publicApi.get(`/public/${slug}/info`)
@@ -242,6 +294,8 @@ export default function BookingPage() {
   // Services are per-practitioner for a clinic, so this waits for a staff
   // selection before fetching; for an individual (isClinic false,
   // selectedStaffId always null) it fires immediately, exactly as before.
+  // Each entry now carries BOTH modes' price/offered — the Mode step and
+  // the Session step both derive from this single fetch.
   useEffect(() => {
     if (isClinic && !selectedStaffId) return;
     setSessionsLoading(true);
@@ -252,17 +306,44 @@ export default function BookingPage() {
       .finally(() => setSessionsLoading(false));
   }, [slug, isClinic, selectedStaffId]);
 
+  // If this doctor only offers one mode (or the fetch briefly hasn't
+  // resolved yet), the Mode step has nothing to actually ask — resolve it
+  // automatically and move straight to Session, exactly matching the old
+  // single-mode flow. Only matters in the moment this step is first
+  // entered; the effect resolves it immediately once data is ready.
+  useEffect(() => {
+    if (currentStep !== "mode" || sessionsLoading) return;
+    if (supportsOnline && supportsOffline) return; // a genuine choice — let the user pick
+    setSelectedMode(supportsOnline ? "ONLINE" : supportsOffline ? "OFFLINE" : null);
+    setCurrentStep("session");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, sessionsLoading, supportsOnline, supportsOffline]);
+
   const fetchSlots = useCallback(async (date: Date) => {
     setSlotsLoading(true);
     setSelectedTime("");
     try {
       const staffParam = isClinic && selectedStaffId ? `&staffId=${selectedStaffId}` : "";
-      const r = await publicApi.get(`/public/${slug}/slots?date=${format(date, "yyyy-MM-dd")}${staffParam}`);
+      const modeParam = selectedMode ? `&mode=${selectedMode}` : "";
+      const r = await publicApi.get(`/public/${slug}/slots?date=${format(date, "yyyy-MM-dd")}${staffParam}${modeParam}`);
       setSlots(Array.isArray(r.data) ? r.data : []);
     } catch {
       setSlots([]);
     } finally { setSlotsLoading(false); }
-  }, [slug, isClinic, selectedStaffId]);
+  }, [slug, isClinic, selectedStaffId, selectedMode]);
+
+  // Schedule-level view of the same calendar the slots fetch above draws
+  // from — lets the date picker disable days up front instead of only
+  // discovering "no slots" after the user has already picked one. Reset
+  // to null (falls back to past/holiday-only disabling) whenever mode
+  // isn't resolved yet, so this never flashes every day as unavailable.
+  useEffect(() => {
+    if (!selectedMode) { setAvailabilitySummary(null); return; }
+    const staffParam = isClinic && selectedStaffId ? `&staffId=${selectedStaffId}` : "";
+    publicApi.get(`/public/${slug}/availability-summary?mode=${selectedMode}${staffParam}`)
+      .then(r => setAvailabilitySummary(r.data))
+      .catch(() => setAvailabilitySummary(null));
+  }, [slug, isClinic, selectedStaffId, selectedMode]);
 
   useEffect(() => { if (selectedDate) fetchSlots(selectedDate); }, [selectedDate, fetchSlots]);
 
@@ -287,33 +368,65 @@ export default function BookingPage() {
     return !e.patientName && !e.patientPhone;
   };
 
+  // Clears everything downstream of "which doctor / which mode" — used
+  // whenever either changes, so a stale session+price from a different
+  // doctor or mode can never silently ride along to Confirm/submit.
+  const resetDownstreamSelection = () => {
+    setSelectedSession(""); setSelectedSessionName(""); setSelectedSessionDuration(""); setSelectedSessionFee(0);
+    setSelectedDate(null); setSelectedTime("");
+  };
+
+  const selectMode = (m: SessionMode) => {
+    setSelectedMode(m);
+    resetDownstreamSelection();
+    setError("");
+  };
+
+  const selectStaff = (staffId: number) => {
+    setSelectedStaffId(staffId);
+    setSelectedMode(null);
+    resetDownstreamSelection();
+    setCurrentStep("mode");
+  };
+
   const next = () => {
-    if (step === 1) {
+    if (currentStep === "details") {
       if (!validateStep1()) return;
       if (form.patientEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.patientEmail)) {
         setForm(f => ({ ...f, patientEmail: "" }));
       }
       setError("");
       // A clinic with more than one bookable practitioner (or none picked
-      // yet) sees a picker between Details and Session; an individual, or a
-      // clinic with exactly one bookable person (auto-selected), goes
-      // straight to step 2 exactly as before.
-      if (isClinic && !selectedStaffId) {
-        setPickerActive(true);
-        return;
-      }
-      setStep(2);
+      // yet) sees a picker next; an individual, or a clinic with exactly
+      // one bookable person (auto-selected), goes straight to Mode (which
+      // itself resolves/skips instantly for a single-mode doctor).
+      setCurrentStep(isClinic && !selectedStaffId ? "practitioner" : "mode");
       return;
     }
-    if (step === 2 && !selectedSession) { setError("Please select a session type."); return; }
-    if (step === 3 && (!selectedDate || !selectedTime)) { setError("Please pick a date and time."); return; }
-    setError(""); setStep(s => s + 1);
+    if (currentStep === "mode") {
+      if (!selectedMode) { setError("Please choose how you'd like to meet."); return; }
+      setCurrentStep("session");
+      return;
+    }
+    if (currentStep === "session" && !selectedSession) { setError("Please select a session type."); return; }
+    if (currentStep === "session") { setCurrentStep("schedule"); return; }
+    if (currentStep === "schedule" && (!selectedDate || !selectedTime)) { setError("Please pick a date and time."); return; }
+    if (currentStep === "schedule") { setCurrentStep("confirm"); return; }
   };
+
   const back = () => {
     setError("");
-    if (pickerActive) { setPickerActive(false); return; }
-    if (step === 2 && isClinic && staffList.length > 1) { setPickerActive(true); return; }
-    setStep(s => s - 1);
+    if (currentStep === "practitioner") { setCurrentStep("details"); return; }
+    if (currentStep === "mode") {
+      setCurrentStep(isClinic && staffList.length > 1 ? "practitioner" : "details");
+      return;
+    }
+    if (currentStep === "session") {
+      setCurrentStep(stepKeys.includes("mode") ? "mode" : (isClinic && staffList.length > 1 ? "practitioner" : "details"));
+      return;
+    }
+    if (currentStep === "schedule") { setCurrentStep("session"); return; }
+    if (currentStep === "confirm") { setCurrentStep("schedule"); return; }
   };
 
   const submit = async () => {
@@ -323,6 +436,7 @@ export default function BookingPage() {
         ...form,
         patientEmail: form.patientEmail.trim() || null,
         sessionType: selectedSession,
+        mode: selectedMode,
         appointmentDate: format(selectedDate!, "yyyy-MM-dd"),
         startTime: selectedTime,
         slug,
@@ -341,6 +455,10 @@ export default function BookingPage() {
   };
 
   const selSessionObj = sessionTypes.find(s => String(s.clinicServiceId) === selectedSession);
+  const selSessionPrice = selSessionObj
+    ? (selectedMode === "ONLINE" ? selSessionObj.onlinePrice : selSessionObj.offlinePrice)
+    : null;
+  const filteredSessions = sessionTypes.filter(s => selectedMode === "ONLINE" ? s.onlineOffered : s.offlineOffered);
 
   if (infoLoading) {
     return <div style={{ minHeight: "100vh" }} />;
@@ -391,15 +509,11 @@ export default function BookingPage() {
         </div>
 
         <div style={{ marginBottom: 32 }} className="anim-fade-up d1">
-          {isClinic ? (
-            <StepDots
-              current={pickerActive ? 2 : (step === 1 ? 1 : step + 1)}
-              total={5}
-              labels={["Details", "Practitioner", "Session", "Schedule", "Confirm"]}
-            />
-          ) : (
-            <StepDots current={step} total={4} labels={["Details", "Session", "Schedule", "Confirm"]} />
-          )}
+          <StepDots
+            current={stepKeys.indexOf(currentStep) + 1}
+            total={stepKeys.length}
+            labels={stepKeys.map(k => STEP_LABELS[k])}
+          />
         </div>
 
         <div className="nm-raised-lg anim-scale-in d2" style={{ borderRadius: 28, padding: "32px 28px" }}>
@@ -410,7 +524,7 @@ export default function BookingPage() {
           )}
 
           {/* ── PRACTITIONER PICKER (clinics with 2+ bookable staff) ── */}
-          {pickerActive && (
+          {currentStep === "practitioner" && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Choose a Practitioner</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>Who would you like to see?</p>
@@ -428,7 +542,7 @@ export default function BookingPage() {
                   {staffList.map(s => (
                     <button
                       key={s.id}
-                      onClick={() => { setSelectedStaffId(s.id); setPickerActive(false); setStep(2); }}
+                      onClick={() => selectStaff(s.id)}
                       className={`session-card-nm ${selectedStaffId === s.id ? "selected" : ""}`}
                       style={{ textAlign: "left", background: "var(--bg)", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px" }}
                     >
@@ -457,8 +571,8 @@ export default function BookingPage() {
             </div>
           )}
 
-          {/* ── STEP 1: Details ─────────────────────────────────── */}
-          {!pickerActive && step === 1 && (
+          {/* ── STEP: Details ─────────────────────────────────── */}
+          {currentStep === "details" && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Your Details</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>No account needed — just the basics.</p>
@@ -503,8 +617,65 @@ export default function BookingPage() {
             </div>
           )}
 
-          {/* ── STEP 2: Session Type ─────────────────────────────── */}
-          {!pickerActive && step === 2 && (
+          {/* ── STEP: Mode (online vs in-person) ─────────────────── */}
+          {currentStep === "mode" && (
+            <div className="anim-slide-r">
+              <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>How would you like to meet?</h2>
+              <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>Pricing may differ between online and in-person.</p>
+
+              {sessionsLoading ? (
+                <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
+                  <Loader2 style={{ width: 24, height: 24, color: "var(--accent)", animation: "spinSlow 1s linear infinite" }} />
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
+                  {([
+                    { m: "OFFLINE" as SessionMode, label: "In-person", sub: "At the clinic", Icon: MapPin },
+                    { m: "ONLINE" as SessionMode, label: "Online", sub: "Video call", Icon: Video },
+                  ]).map(({ m, label, sub, Icon }) => (
+                    <button
+                      key={m}
+                      onClick={() => selectMode(m)}
+                      className={`session-card-nm ${selectedMode === m ? "selected" : ""}`}
+                      style={{ textAlign: "left", background: "var(--bg)" }}
+                    >
+                      <div style={{
+                        width: 34, height: 34, borderRadius: 10,
+                        background: selectedMode === m ? "var(--accent)" : "var(--bg)",
+                        boxShadow: selectedMode === m
+                          ? "2px 2px 8px #4a5bcc, -1px -1px 4px #8b9cf4"
+                          : "3px 3px 7px var(--sd), -3px -3px 7px var(--sl)",
+                        display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12,
+                        color: selectedMode === m ? "#fff" : "var(--accent)",
+                      }}>
+                        <Icon style={{ width: 16, height: 16 }} />
+                      </div>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>{label}</p>
+                      <p style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>{sub}</p>
+                      {selectedMode === m && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+                          <CheckCircle2 style={{ width: 11, height: 11, color: "var(--accent)" }} />
+                          <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>Selected</span>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 12 }}>
+                <button className="btn-nm" onClick={back} style={{ flex: "none", padding: "12px 20px" }}>
+                  <ChevronLeft style={{ width: 14, height: 14 }} /> Back
+                </button>
+                <button className="btn-nm-accent" onClick={next} disabled={!selectedMode} style={{ flex: 1 }}>
+                  Continue <ChevronRight style={{ width: 15, height: 15 }} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP: Session Type ─────────────────────────────── */}
+          {currentStep === "session" && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Session Type</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 28 }}>Choose what fits your needs.</p>
@@ -513,14 +684,15 @@ export default function BookingPage() {
                 <div style={{ display: "flex", justifyContent: "center", padding: 32 }}>
                   <Loader2 style={{ width: 24, height: 24, color: "var(--accent)", animation: "spinSlow 1s linear infinite" }} />
                 </div>
-              ) : sessionTypes.length === 0 ? (
+              ) : filteredSessions.length === 0 ? (
                 <div className="nm-inset-sm" style={{ borderRadius: 16, padding: 24, textAlign: "center" }}>
                   <p style={{ fontSize: 12, color: "var(--text-3)" }}>No services configured yet.</p>
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 28 }}>
-                  {sessionTypes.map(s => {
+                  {filteredSessions.map(s => {
                     const sid = String(s.clinicServiceId);
+                    const price = selectedMode === "ONLINE" ? s.onlinePrice : s.offlinePrice;
                     return (
                       <button
                         key={s.clinicServiceId}
@@ -528,7 +700,7 @@ export default function BookingPage() {
                           setSelectedSession(sid);
                           setSelectedSessionName(s.serviceName);
                           setSelectedSessionDuration(s.serviceDuration);
-                          setSelectedSessionFee(s.price);
+                          setSelectedSessionFee(price ?? 0);
                           setError("");
                         }}
                         className={`session-card-nm ${selectedSession === sid ? "selected" : ""}`}
@@ -558,7 +730,7 @@ export default function BookingPage() {
                         <p style={{ fontSize: 10, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 4 }}>
                           <Clock style={{ width: 10, height: 10 }}/> {s.serviceDuration}
                           <span style={{ color: "var(--accent)", fontWeight: 600 }}>
-                            • {Number(s.price) > 0 ? `₹${Number(s.price).toFixed(2)}` : "Free"}
+                            • {Number(price) > 0 ? `₹${Number(price).toFixed(2)}` : "Free"}
                           </span>
                         </p>
                         {selectedSession === sid && (
@@ -584,8 +756,8 @@ export default function BookingPage() {
             </div>
           )}
 
-          {/* ── STEP 3: Date & Time ───────────────────────────────── */}
-          {!pickerActive && step === 3 && (
+          {/* ── STEP: Date & Time ───────────────────────────────── */}
+          {currentStep === "schedule" && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Schedule</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 24 }}>Pick a date, then choose a time slot.</p>
@@ -595,7 +767,7 @@ export default function BookingPage() {
                   <Calendar style={{ width: 11, height: 11 }} /> Date
                 </p>
                 <div className="cal-container">
-                  <MiniCalendar selected={selectedDate} onSelect={setSelectedDate} holidays={holidays} />
+                  <MiniCalendar selected={selectedDate} onSelect={setSelectedDate} holidays={holidays} availability={availabilitySummary} />
                 </div>
               </div>
 
@@ -652,8 +824,8 @@ export default function BookingPage() {
             </div>
           )}
 
-          {/* ── STEP 4: Confirm ──────────────────────────────────── */}
-          {!pickerActive && step === 4 && (
+          {/* ── STEP: Confirm ──────────────────────────────────── */}
+          {currentStep === "confirm" && (
             <div className="anim-slide-r">
               <h2 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-1)", marginBottom: 6 }}>Review & Confirm</h2>
               <p style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 24 }}>Everything look right?</p>
@@ -666,9 +838,10 @@ export default function BookingPage() {
                   { label: "Patient",       value: form.patientName },
                   ...(form.patientEmail ? [{ label: "Email",    value: form.patientEmail }] : []),
                   { label: "Phone",         value: form.patientPhone },
+                  ...(selectedMode ? [{ label: "Mode", value: selectedMode === "ONLINE" ? "Online (video call)" : "In-person" }] : []),
                   { label: "Session",       value: selSessionObj?.serviceName || selectedSessionName || selectedSession },
                   { label: "Duration",      value: selSessionObj?.serviceDuration || selectedSessionDuration || "—" },
-                  { label: "Fee",           value: (selSessionObj?.price || selectedSessionFee) > 0 ? `₹${Number(selSessionObj?.price || selectedSessionFee).toFixed(2)}` : "Free" },
+                  { label: "Fee",           value: Number(selSessionPrice ?? selectedSessionFee) > 0 ? `₹${Number(selSessionPrice ?? selectedSessionFee).toFixed(2)}` : "Free" },
                   { label: "Date",          value: selectedDate ? format(selectedDate, "EEEE, MMMM d, yyyy") : "—" },
                   { label: "Time",          value: selectedTime ? fmtTime(selectedTime) : "—" },
                 ].map(row => (

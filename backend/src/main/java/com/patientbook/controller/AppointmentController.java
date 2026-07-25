@@ -94,13 +94,14 @@ public class AppointmentController {
         String sessionType = body.get("sessionType");
         String notes       = body.getOrDefault("notes", "");
         String status      = body.getOrDefault("status", "COMPLETED");
+        String mode        = body.get("mode");
         Long staffId       = body.get("staffId") != null && !body.get("staffId").isBlank()
                 ? Long.parseLong(body.get("staffId")) : null;
 
         Long tenantId = currentUserProvider.getCurrentTenantId();
         Long callerOwnId = currentUserProvider.getCurrentUserId();
         return ResponseEntity.ok(appointmentService.recordPastSession(
-                patientId, tenantId, callerOwnId, staffId, date, time, sessionType, notes, status));
+                patientId, tenantId, callerOwnId, staffId, date, time, sessionType, notes, status, mode));
     }
 
     // ── Protected endpoints — always scoped to the caller's own account ───
@@ -156,7 +157,8 @@ public class AppointmentController {
         LocalTime time     = body.get("startTime")       != null ? LocalTime.parse(body.get("startTime"))       : null;
         String sessionType = body.get("sessionType");
         String notes       = body.get("notes");
+        String mode        = body.get("mode");
         return ResponseEntity.ok(appointmentService.updateAppointmentDetails(
-                id, currentUserProvider.getCurrentTenantId(), date, time, sessionType, notes));
+                id, currentUserProvider.getCurrentTenantId(), date, time, sessionType, notes, mode));
     }
 }

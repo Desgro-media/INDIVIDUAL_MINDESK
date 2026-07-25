@@ -5,10 +5,11 @@ import {
   Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
   Sparkles, Brain, Heart, Users, RefreshCw, HelpCircle,
   ClipboardList, Home, Baby, AlertCircle, Briefcase, X,
-  Save, Loader2, CheckCircle2, Clock
+  Save, Loader2, CheckCircle2, Clock, Video, MapPin
 } from "lucide-react";
 import api from "../../../lib/api";
 import { SpotlightDiv } from "../../../components/Spotlight";
+import { getMyServices, saveMyServices, DoctorServicePrice } from "../../../lib/profileApi";
 
 const ICON_OPTIONS = [
   { value: "Sparkles",     label: "Sparkles",   icon: Sparkles },
@@ -53,13 +54,32 @@ const emptyForm = (): Omit<Service, "id" | "createdAt"> => ({
   displayOrder: 0,
 });
 
+interface ModeForm {
+  offlineOffered: boolean;
+  offlinePrice: number | string;
+  onlineOffered: boolean;
+  onlinePrice: number | string;
+}
+
+const emptyModeForm = (baseFee: number): ModeForm => ({
+  // Matches the backend's individual zero-config default: in-person starts
+  // on, priced at whatever base fee the doctor just entered. Online always
+  // starts off — it's always an explicit opt-in, for every account type.
+  offlineOffered: true,
+  offlinePrice: baseFee || 0,
+  onlineOffered: false,
+  onlinePrice: 0,
+});
+
 export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
+  const [myPricing, setMyPricing] = useState<DoctorServicePrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm());
+  const [modeForm, setModeForm] = useState<ModeForm>(emptyModeForm(0));
   const [formError, setFormError] = useState("");
   const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null);
 
@@ -68,11 +88,15 @@ export default function ServicesPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchServices = async () => {
+  const fetchAll = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/services");
-      setServices(res.data);
+      const [svcRes, pricing] = await Promise.all([
+        api.get("/services"),
+        getMyServices().catch(() => [] as DoctorServicePrice[]),
+      ]);
+      setServices(svcRes.data);
+      setMyPricing(pricing);
     } catch {
       flash("Failed to load services.", true);
     } finally {
@@ -80,11 +104,14 @@ export default function ServicesPage() {
     }
   };
 
-  useEffect(() => { fetchServices(); }, []);
+  useEffect(() => { fetchAll(); }, []);
+
+  const pricingFor = (clinicServiceId: number) => myPricing.find(p => p.clinicServiceId === clinicServiceId);
 
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm());
+    setModeForm(emptyModeForm(0));
     setFormError("");
     setShowModal(true);
   };
@@ -100,6 +127,13 @@ export default function ServicesPage() {
       active: svc.active,
       displayOrder: svc.displayOrder,
     });
+    const p = pricingFor(svc.id);
+    setModeForm(p ? {
+      offlineOffered: p.offlineOffered,
+      offlinePrice: p.offlinePrice ?? 0,
+      onlineOffered: p.onlineOffered,
+      onlinePrice: p.onlinePrice ?? 0,
+    } : emptyModeForm(Number(svc.fee) || 0));
     setFormError("");
     setShowModal(true);
   };
@@ -107,19 +141,36 @@ export default function ServicesPage() {
   const handleSave = async () => {
     if (!form.name.trim()) { setFormError("Service name is required."); return; }
     if (!form.duration.trim()) { setFormError("Duration is required."); return; }
+    if (!modeForm.offlineOffered && !modeForm.onlineOffered) {
+      setFormError("Offer this service in at least one mode (in-person or online), or turn it Inactive above instead.");
+      return;
+    }
     setSaving(true);
     setFormError("");
     try {
-      const payload = { ...form, fee: Number(form.fee) || 0 };
+      // The catalog's single `fee` field is only ever read as a fallback
+      // for pre-existing/legacy rows with no DoctorServicePrice override
+      // (see DoctorAvailabilityService) — this form always creates that
+      // override immediately below, but keep it in sync with the
+      // in-person price anyway so it never silently drifts stale.
+      const payload = { ...form, fee: Number(modeForm.offlinePrice) || 0 };
+      let clinicServiceId = editingId;
       if (editingId) {
         await api.put(`/services/${editingId}`, payload);
-        flash("Service updated successfully!");
       } else {
-        await api.post("/services", payload);
-        flash("Service created successfully!");
+        const res = await api.post("/services", payload);
+        clinicServiceId = res.data.id;
       }
+      await saveMyServices([{
+        clinicServiceId: clinicServiceId!,
+        offlineOffered: modeForm.offlineOffered,
+        offlinePrice: Number(modeForm.offlinePrice) || 0,
+        onlineOffered: modeForm.onlineOffered,
+        onlinePrice: Number(modeForm.onlinePrice) || 0,
+      }]);
+      flash(editingId ? "Service updated successfully!" : "Service created successfully!");
       setShowModal(false);
-      fetchServices();
+      fetchAll();
     } catch {
       setFormError("Failed to save. Please try again.");
     } finally {
@@ -132,7 +183,7 @@ export default function ServicesPage() {
     try {
       await api.delete(`/services/${id}`);
       flash("Service deleted.");
-      fetchServices();
+      fetchAll();
     } catch {
       flash("Failed to delete service.", true);
     }
@@ -141,7 +192,7 @@ export default function ServicesPage() {
   const handleToggle = async (id: number) => {
     try {
       await api.patch(`/services/${id}/toggle`);
-      fetchServices();
+      fetchAll();
     } catch {
       flash("Failed to toggle service.", true);
     }
@@ -169,7 +220,7 @@ export default function ServicesPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-1)" }}>Services</h1>
-          <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>Manage session types shown on the booking page</p>
+          <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>Manage session types, and your online / in-person pricing for each</p>
         </div>
         <button onClick={openCreate} className="btn-nm-accent" style={{ padding: "12px 20px" }}>
           <Plus style={{ width: 16, height: 16 }} /> Add Service
@@ -206,7 +257,17 @@ export default function ServicesPage() {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
-          {services.map((svc, i) => (
+          {services.map((svc, i) => {
+            const p = pricingFor(svc.id);
+            // No pricing row yet means "use the individual zero-config
+            // default" (in-person auto-offered at the base fee below) —
+            // mirrors DoctorAvailabilityService's read-path fallback, so
+            // the card never contradicts what's actually live.
+            const offlineOn = p ? p.offlineOffered : true;
+            const offlinePrice = p?.offlinePrice ?? svc.fee;
+            const onlineOn = p ? p.onlineOffered : false;
+            const onlinePrice = p?.onlinePrice ?? 0;
+            return (
             <SpotlightDiv
               key={svc.id}
               className={`soft-card card-hover anim-fade-up d${Math.min(i + 1, 6)}`}
@@ -235,28 +296,39 @@ export default function ServicesPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <h3 style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)", lineHeight: 1.3 }}>{svc.name}</h3>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <Clock style={{ width: 11, height: 11, color: "var(--text-3)" }} />
-                      <span style={{ fontSize: 11, color: "var(--text-3)" }}>{svc.duration}</span>
-                    </div>
-                    {Number(svc.fee) > 0 && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)" }}>
-                          ₹{Number(svc.fee).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6 }}>
+                    <Clock style={{ width: 11, height: 11, color: "var(--text-3)" }} />
+                    <span style={{ fontSize: 11, color: "var(--text-3)" }}>{svc.duration}</span>
                   </div>
                 </div>
               </div>
 
               {/* Description */}
               {svc.description && (
-                <p style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 16, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                <p style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 14, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                   {svc.description}
                 </p>
               )}
+
+              {/* Mode pricing */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, color: offlineOn ? "var(--text-2)" : "var(--text-3)", fontWeight: 600 }}>
+                    <MapPin style={{ width: 11, height: 11 }} /> In-person
+                  </span>
+                  <span style={{ fontWeight: 700, color: offlineOn ? "var(--accent)" : "var(--text-3)" }}>
+                    {offlineOn ? (Number(offlinePrice) > 0 ? `₹${Number(offlinePrice).toFixed(2)}` : "Free") : "Not offered"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, color: onlineOn ? "var(--text-2)" : "var(--text-3)", fontWeight: 600 }}>
+                    <Video style={{ width: 11, height: 11 }} /> Online
+                  </span>
+                  <span style={{ fontWeight: 700, color: onlineOn ? "var(--accent)" : "var(--text-3)" }}>
+                    {onlineOn ? (Number(onlinePrice) > 0 ? `₹${Number(onlinePrice).toFixed(2)}` : "Free") : "Not offered"}
+                  </span>
+                </div>
+              </div>
 
               {/* Status + Actions */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, borderTop: "1px solid var(--card-border)" }}>
@@ -288,7 +360,8 @@ export default function ServicesPage() {
                 </div>
               </div>
             </SpotlightDiv>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -345,7 +418,7 @@ export default function ServicesPage() {
               </div>
 
               {/* Duration + Order */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
                     Duration *
@@ -357,19 +430,7 @@ export default function ServicesPage() {
                     placeholder="50 min"
                     className="nm-input no-icon"
                   />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
-                    Fee (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={form.fee === 0 ? "" : form.fee}
-                    onChange={e => setForm(f => ({ ...f, fee: e.target.value }))}
-                    placeholder="e.g. 100.00"
-                    className="nm-input no-icon"
-                  />
+                  <p style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6 }}>Same for both modes — only price differs.</p>
                 </div>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>
@@ -414,6 +475,68 @@ export default function ServicesPage() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Session modes & pricing */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 10 }}>
+                  Session Modes & Your Pricing
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {/* In-person */}
+                  <div className="soft-card-2" style={{ borderRadius: 14, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: modeForm.offlineOffered ? 10 : 0 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
+                        <MapPin style={{ width: 14, height: 14, color: "var(--accent)" }} /> In-person
+                      </span>
+                      <button type="button" onClick={() => setModeForm(f => ({ ...f, offlineOffered: !f.offlineOffered }))}
+                        style={{
+                          position: "relative", width: 40, height: 22, borderRadius: 50, border: "none", cursor: "pointer",
+                          background: modeForm.offlineOffered ? "var(--accent)" : "var(--bg)",
+                          boxShadow: modeForm.offlineOffered ? "2px 2px 6px #4a5bcc" : "inset 2px 2px 4px var(--sd), inset -2px -2px 4px var(--sl)",
+                        }}>
+                        <span style={{ position: "absolute", top: 3, width: 16, height: 16, background: modeForm.offlineOffered ? "#fff" : "var(--sd)", borderRadius: "50%", left: modeForm.offlineOffered ? 21 : 3, transition: "left 0.2s ease" }} />
+                      </button>
+                    </div>
+                    {modeForm.offlineOffered && (
+                      <input
+                        type="number" step="0.01"
+                        value={modeForm.offlinePrice === 0 ? "" : modeForm.offlinePrice}
+                        onChange={e => setModeForm(f => ({ ...f, offlinePrice: e.target.value }))}
+                        placeholder="In-person price (₹) — e.g. 800.00"
+                        className="nm-input no-icon"
+                      />
+                    )}
+                  </div>
+                  {/* Online */}
+                  <div className="soft-card-2" style={{ borderRadius: 14, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: modeForm.onlineOffered ? 10 : 0 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
+                        <Video style={{ width: 14, height: 14, color: "var(--accent)" }} /> Online (video call)
+                      </span>
+                      <button type="button" onClick={() => setModeForm(f => ({ ...f, onlineOffered: !f.onlineOffered }))}
+                        style={{
+                          position: "relative", width: 40, height: 22, borderRadius: 50, border: "none", cursor: "pointer",
+                          background: modeForm.onlineOffered ? "var(--accent)" : "var(--bg)",
+                          boxShadow: modeForm.onlineOffered ? "2px 2px 6px #4a5bcc" : "inset 2px 2px 4px var(--sd), inset -2px -2px 4px var(--sl)",
+                        }}>
+                        <span style={{ position: "absolute", top: 3, width: 16, height: 16, background: modeForm.onlineOffered ? "#fff" : "var(--sd)", borderRadius: "50%", left: modeForm.onlineOffered ? 21 : 3, transition: "left 0.2s ease" }} />
+                      </button>
+                    </div>
+                    {modeForm.onlineOffered && (
+                      <input
+                        type="number" step="0.01"
+                        value={modeForm.onlinePrice === 0 ? "" : modeForm.onlinePrice}
+                        onChange={e => setModeForm(f => ({ ...f, onlinePrice: e.target.value }))}
+                        placeholder="Online price (₹) — e.g. 600.00"
+                        className="nm-input no-icon"
+                      />
+                    )}
+                  </div>
+                </div>
+                <p style={{ fontSize: 10, color: "var(--text-3)", marginTop: 8 }}>
+                  Clients choose a mode when booking and pay whichever price applies. Turn a mode off to hide it from the booking page for this service.
+                </p>
               </div>
 
               {/* Active toggle */}

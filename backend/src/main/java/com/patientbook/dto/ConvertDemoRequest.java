@@ -23,4 +23,8 @@ public class ConvertDemoRequest {
     // member (validated server-side via StaffResolutionService). Defaults to
     // the clinic owner/tenant root when omitted.
     private Long staffId;
+
+    // ONLINE or OFFLINE — see BookingRequest.mode; same defaulting and
+    // server-side re-validation rules apply.
+    private String mode;
 }

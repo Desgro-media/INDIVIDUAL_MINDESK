@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import {
   Check, X, Search, RefreshCw, Calendar, Clock,
   AlertCircle, Phone, Mail, FileText, Tag,
-  CheckCircle2, XCircle, Hourglass, Timer, Eye, PhoneCall
+  CheckCircle2, XCircle, Hourglass, Timer, Eye, PhoneCall, Video, MapPin
 } from "lucide-react";
 import api from "../../../lib/api";
 import MonthFilter, { monthKey, monthLabel } from "../../../components/MonthFilter";
@@ -23,6 +23,7 @@ type Appointment = {
   trackingToken: string;
   cancellationReason?: string;
   sessionType?: string;
+  mode?: string; // ONLINE or OFFLINE
   notes?: string;
   paymentScreenshotBase64?: string;
   returningPatient?: boolean;
@@ -54,7 +55,7 @@ export default function AppointmentsPage() {
   const [toast, setToast] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [services, setServices] = useState<any[]>([]);
   const [convertDialog, setConvertDialog] = useState<{ open: boolean; id: number | null; sessionType?: string }>({ open: false, id: null });
-  const [convertForm, setConvertForm] = useState({ appointmentDate: "", startTime: "", sessionType: "" });
+  const [convertForm, setConvertForm] = useState({ appointmentDate: "", startTime: "", sessionType: "", mode: "OFFLINE" as "ONLINE" | "OFFLINE" });
 
   const showToast = (text: string, type: "success" | "error") => {
     setToast({ text, type });
@@ -135,7 +136,7 @@ export default function AppointmentsPage() {
   };
 
   const openConvertDialog = (apt: Appointment) => {
-    setConvertForm({ appointmentDate: "", startTime: "", sessionType: apt.sessionType || "" });
+    setConvertForm({ appointmentDate: "", startTime: "", sessionType: apt.sessionType || "", mode: (apt.mode as "ONLINE" | "OFFLINE") || "OFFLINE" });
     setConvertDialog({ open: true, id: apt.id, sessionType: apt.sessionType });
   };
 
@@ -151,6 +152,7 @@ export default function AppointmentsPage() {
         appointmentDate: convertForm.appointmentDate,
         startTime:       convertForm.startTime + ":00",
         sessionType:     convertForm.sessionType || null,
+        mode:            convertForm.mode,
       });
       showToast("Demo call converted to appointment!", "success");
       setConvertDialog({ open: false, id: null });
@@ -226,6 +228,21 @@ export default function AppointmentsPage() {
     const svc = services.find(s => String(s.id) === sessionType);
     if (svc) return svc.name;
     return sessionType.replace(/_/g, " ");
+  };
+
+  // Missing/legacy mode defaults to OFFLINE, mirroring the backend's own
+  // null-safe default (see AppointmentService.mapToDto).
+  const ModeBadge = ({ mode }: { mode?: string }) => {
+    const isOnline = mode === "ONLINE";
+    return (
+      <span style={{
+        display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700,
+        color: isOnline ? "#0369a1" : "var(--text-2)",
+      }}>
+        {isOnline ? <Video style={{ width: 10, height: 10 }} /> : <MapPin style={{ width: 10, height: 10 }} />}
+        {isOnline ? "Online" : "In-person"}
+      </span>
+    );
   };
 
   return (
@@ -396,9 +413,12 @@ export default function AppointmentsPage() {
                       </div>
                     </td>
                     <td style={{ padding: "14px 20px" }}>
-                      <div className="nm-inset-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, fontSize: 11, color: "var(--text-2)" }}>
-                        <Tag style={{ width: 11, height: 11, color: "var(--accent)" }} />
-                        {getSessionName(apt.sessionType)}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                        <div className="nm-inset-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, fontSize: 11, color: "var(--text-2)" }}>
+                          <Tag style={{ width: 11, height: 11, color: "var(--accent)" }} />
+                          {getSessionName(apt.sessionType)}
+                        </div>
+                        {apt.status !== "DEMO_CALL_PENDING" && <ModeBadge mode={apt.mode} />}
                       </div>
                     </td>
                     <td style={{ padding: "14px 20px" }}>
@@ -630,6 +650,12 @@ export default function AppointmentsPage() {
                     { icon: <Clock    style={{ width: 13, height: 13, color: "var(--accent)" }} />, label: "Time",     value: selected.status === "DEMO_CALL_PENDING" ? "—" : (selected.startTime || "—") },
                     { icon: <Timer    style={{ width: 13, height: 13, color: "var(--accent)" }} />, label: "End Time", value: selected.status === "DEMO_CALL_PENDING" ? "—" : (selected.endTime || "—") },
                     { icon: <Tag      style={{ width: 13, height: 13, color: "var(--accent)" }} />, label: "Session",  value: getSessionName(selected.sessionType) },
+                    ...(selected.status !== "DEMO_CALL_PENDING" ? [{
+                      icon: selected.mode === "ONLINE"
+                        ? <Video style={{ width: 13, height: 13, color: "var(--accent)" }} />
+                        : <MapPin style={{ width: 13, height: 13, color: "var(--accent)" }} />,
+                      label: "Mode", value: selected.mode === "ONLINE" ? "Online" : "In-person",
+                    }] : []),
                   ].map(item => (
                     <div key={item.label} className="soft-card-2" style={{ borderRadius: 12, padding: "12px 14px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "var(--text-3)", marginBottom: 6 }}>
@@ -829,6 +855,25 @@ export default function AppointmentsPage() {
                   </select>
                 </div>
               )}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>Mode</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {([
+                    { v: "OFFLINE" as const, label: "In-person", Icon: MapPin },
+                    { v: "ONLINE" as const, label: "Online", Icon: Video },
+                  ]).map(({ v, label, Icon }) => (
+                    <button key={v} type="button" onClick={() => setConvertForm(f => ({ ...f, mode: v }))}
+                      className="btn-nm"
+                      style={{
+                        flex: 1, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        background: convertForm.mode === v ? "var(--accent)" : undefined,
+                        color: convertForm.mode === v ? "#fff" : undefined,
+                      }}>
+                      <Icon style={{ width: 13, height: 13 }} /> {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: 12, marginTop: 20 }}>

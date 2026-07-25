@@ -102,6 +102,38 @@ public class AppointmentService {
         // the service catalog is tenant-wide, so this stays keyed by tenantId
         int slotDuration = resolveSessionDurationMinutes(request.getSessionType(), tenantId);
 
+        // 2b. Resolve + validate mode against what this doctor actually
+        // offers, BEFORE anything is persisted — fail closed rather than
+        // create the appointment and risk mischarging it. Also closes the
+        // trust boundary on a client-supplied sessionType the assigned
+        // doctor never opted into at all (see
+        // DoctorAvailabilityService.resolveBookablePrice — never trust a
+        // client-supplied mode/service combo without this check).
+        String mode = request.getMode() != null ? request.getMode() : "OFFLINE";
+        if (request.getSessionType() != null) {
+            try {
+                Long serviceId = Long.parseLong(request.getSessionType());
+                doctorAvailabilityService.resolveBookablePrice(tenantId, assignedDoctorId, serviceId, mode);
+            } catch (NumberFormatException ignored) {
+                // sessionType is a legacy name string, not a service id — nothing to validate
+            }
+        }
+
+        // 2c. Reject if this exact slot was just taken by another booking —
+        // the client's earlier slot fetch only reflects availability at
+        // fetch time, and this is a same-transaction, authoritative check
+        // right before the row is inserted. Deliberately mode-agnostic —
+        // one physical doctor can't run two sessions at once regardless of
+        // channel, see DoctorAvailabilityService's slot-conflict note.
+        LocalTime newEndTime = request.getStartTime().plusMinutes(slotDuration);
+        boolean overlaps = appointmentRepository.findByAppointmentDateAndAssignedDoctorId(request.getAppointmentDate(), assignedDoctorId)
+                .stream()
+                .filter(a -> !"CANCELLED".equals(a.getStatus()))
+                .anyMatch(a -> a.getStartTime().isBefore(newEndTime) && request.getStartTime().isBefore(a.getEndTime()));
+        if (overlaps) {
+            throw new IllegalStateException("This slot was just booked — please choose another time.");
+        }
+
         // 3. Generate a unique 25-char tracking token
         String trackingToken = UUID.randomUUID().toString().replace("-", "").substring(0, 25);
 
@@ -114,10 +146,11 @@ public class AppointmentService {
                 .patient(patient)
                 .appointmentDate(request.getAppointmentDate())
                 .startTime(request.getStartTime())
-                .endTime(request.getStartTime().plusMinutes(slotDuration))
+                .endTime(newEndTime)
                 .status("AWAITING_PAYMENT")
                 .trackingToken(trackingToken)
                 .sessionType(request.getSessionType())
+                .mode(mode)
                 .notes(request.getNotes())
                 .previousAppointmentId(previousAppointmentId)
                 .psychologistId(tenantId)
@@ -126,7 +159,7 @@ public class AppointmentService {
 
         appointment = appointmentRepository.save(appointment);
 
-        // 6. Create invoice — uses per-doctor pricing
+        // 6. Create invoice — uses per-doctor, per-mode pricing
         InvoiceDto invoice = invoiceService.createInvoiceForAppointment(appointment.getId());
 
         // Extract data BEFORE transaction ends — prevents lazy-load in async thread
@@ -173,6 +206,7 @@ public class AppointmentService {
         newRequest.setAppointmentDate(request.getNewAppointmentDate());
         newRequest.setStartTime(request.getNewStartTime());
         newRequest.setSessionType(oldAppointment.getSessionType());
+        newRequest.setMode(oldAppointment.getMode());
         newRequest.setNotes(oldAppointment.getNotes());
 
         // Tenant AND the specific practitioner are both carried over from the
@@ -336,12 +370,23 @@ public class AppointmentService {
         int slotDuration = resolveSessionDurationMinutes(request.getSessionType(), tenantId);
         Long assignedDoctorId = staffResolutionService.resolveTenantStaffId(tenantId, tenantId, request.getStaffId());
 
+        String resolvedSessionType = (request.getSessionType() != null && !request.getSessionType().isBlank())
+                ? request.getSessionType() : appointment.getSessionType();
+        String mode = request.getMode() != null ? request.getMode() : "OFFLINE";
+        if (resolvedSessionType != null) {
+            try {
+                Long serviceId = Long.parseLong(resolvedSessionType);
+                doctorAvailabilityService.resolveBookablePrice(tenantId, assignedDoctorId, serviceId, mode);
+            } catch (NumberFormatException ignored) {
+                // resolvedSessionType is a legacy name string (e.g. a demo call's serviceInterest), not a service id
+            }
+        }
+
         appointment.setAppointmentDate(request.getAppointmentDate());
         appointment.setStartTime(request.getStartTime());
         appointment.setEndTime(request.getStartTime().plusMinutes(slotDuration));
-        if (request.getSessionType() != null && !request.getSessionType().isBlank()) {
-            appointment.setSessionType(request.getSessionType());
-        }
+        appointment.setSessionType(resolvedSessionType);
+        appointment.setMode(mode);
         appointment.setAssignedDoctorId(assignedDoctorId);
         appointment.setStatus("AWAITING_PAYMENT");
         appointment = appointmentRepository.save(appointment);
@@ -382,7 +427,7 @@ public class AppointmentService {
     // ── Update appointment details ─────────────────────────────────────────
     @Transactional
     public AppointmentDto updateAppointmentDetails(Long id, Long ownerId, LocalDate date, LocalTime startTime,
-                                                    String sessionType, String notes) {
+                                                    String sessionType, String notes, String mode) {
         Appointment appt = appointmentRepository.findByIdAndPsychologistId(id, ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Appointment not found: " + id));
         if (date != null) appt.setAppointmentDate(date);
@@ -392,6 +437,7 @@ public class AppointmentService {
             appt.setEndTime(startTime.plusMinutes(duration));
         }
         if (sessionType != null) appt.setSessionType(sessionType);
+        if (mode != null) appt.setMode(mode);
         if (notes != null) appt.setNotes(notes);
         return mapToDto(appointmentRepository.save(appt));
     }
@@ -400,7 +446,7 @@ public class AppointmentService {
     @Transactional
     public AppointmentDto recordPastSession(Long patientId, Long tenantId, Long callerOwnId, Long requestedStaffId,
                                             LocalDate date, LocalTime time,
-                                            String sessionType, String notes, String status) {
+                                            String sessionType, String notes, String status, String mode) {
         Patient patient = patientRepository.findByIdAndPrimaryPsychologistId(patientId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Patient not found: " + patientId));
 
@@ -408,6 +454,12 @@ public class AppointmentService {
         String resolvedStatus = (status != null && !status.isBlank()) ? status : "COMPLETED";
         Long assignedDoctorId = staffResolutionService.resolveTenantStaffId(tenantId, callerOwnId, requestedStaffId);
 
+        // This records something that already happened, potentially under a
+        // service/mode combo the doctor no longer offers today — no
+        // resolveBookablePrice validation here (unlike live booking); the
+        // invoice-creation call below already degrades gracefully to a
+        // zero fee if the combo can't be resolved, same as an unparseable
+        // sessionType.
         Appointment appt = Appointment.builder()
                 .patient(patient)
                 .appointmentDate(date)
@@ -415,6 +467,7 @@ public class AppointmentService {
                 .endTime(time.plusMinutes(slotDuration))
                 .status(resolvedStatus)
                 .sessionType(sessionType)
+                .mode(mode != null ? mode : "OFFLINE")
                 .notes(notes)
                 .trackingToken(UUID.randomUUID().toString().replace("-", "").substring(0, 25))
                 .psychologistId(tenantId)
@@ -473,6 +526,7 @@ public class AppointmentService {
                 .trackingToken(appointment.getTrackingToken())
                 .cancellationReason(appointment.getCancellationReason())
                 .sessionType(appointment.getSessionType())
+                .mode(appointment.getMode() != null ? appointment.getMode() : "OFFLINE")
                 .notes(appointment.getNotes())
                 .rating(appointment.getRating())
                 .feedback(appointment.getFeedback())

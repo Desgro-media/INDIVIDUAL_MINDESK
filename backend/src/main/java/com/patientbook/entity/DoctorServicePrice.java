@@ -25,9 +25,21 @@ public class DoctorServicePrice {
     @JoinColumn(name = "clinic_service_id", nullable = false)
     private ClinicService clinicService;
 
-    @Column(nullable = false)
-    private BigDecimal price;
+    // Per-mode price/opt-in. Nullable — a doctor may configure only one
+    // mode for a given service. The old single `price`/`offered` columns
+    // are gone from this mapping but still physically exist in Postgres
+    // under ddl-auto=update; StartupInitializer's one-time backfill reads
+    // them via native SQL to populate offlinePrice/offlineOffered below.
+    private BigDecimal onlinePrice;
 
-    @Column(nullable = false)
-    private boolean offered = true;
+    private BigDecimal offlinePrice;
+
+    // SQL-level default is required (not just @Builder.Default) so the
+    // ALTER TABLE adding this NOT NULL column succeeds against the
+    // already-populated table.
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    private boolean onlineOffered;
+
+    @Column(nullable = false, columnDefinition = "boolean not null default false")
+    private boolean offlineOffered;
 }

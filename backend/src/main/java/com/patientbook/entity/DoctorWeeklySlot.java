@@ -29,4 +29,9 @@ public class DoctorWeeklySlot {
 
     @Column(nullable = false)
     private boolean active = true;
+
+    // ONLINE or OFFLINE. This legacy model has no create UI anymore, so
+    // every row predates the mode concept — backfilled to OFFLINE at
+    // startup (see StartupInitializer) and never populated as ONLINE.
+    private String mode;
 }

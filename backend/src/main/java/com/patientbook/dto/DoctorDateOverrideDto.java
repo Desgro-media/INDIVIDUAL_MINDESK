@@ -11,4 +11,7 @@ public class DoctorDateOverrideDto {
     private LocalDate specificDate;
     private String slotTime;
     private boolean available;
+    // ONLINE, OFFLINE, or null (null = applies to both calendars — only
+    // valid for a whole-day block, see DoctorDateOverride).
+    private String mode;
 }
