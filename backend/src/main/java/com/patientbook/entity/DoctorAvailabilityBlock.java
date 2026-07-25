@@ -34,4 +34,11 @@ public class DoctorAvailabilityBlock {
     // Slot interval in minutes (30, 45, 60, 90, 120)
     @Column(nullable = false)
     private int intervalMinutes;
+
+    // ONLINE or OFFLINE — which calendar this block belongs to. Nullable at
+    // the column level only for the startup backfill window (see
+    // StartupInitializer); every pre-existing row predates this feature and
+    // is backfilled to OFFLINE, since that's the only mode that existed
+    // before online sessions were introduced.
+    private String mode;
 }

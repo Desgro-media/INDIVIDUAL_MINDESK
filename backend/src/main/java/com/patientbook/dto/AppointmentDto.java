@@ -22,6 +22,7 @@ public class AppointmentDto {
     private String trackingToken;
     private String cancellationReason;
     private String sessionType;
+    private String mode; // ONLINE or OFFLINE
     private String notes;
     private Integer rating;
     private String feedback;

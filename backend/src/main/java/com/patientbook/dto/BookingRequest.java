@@ -35,6 +35,14 @@ public class BookingRequest {
     @Size(max = 2000)
     private String notes;       // Patient's optional message / reason for visit
 
+    // ONLINE or OFFLINE — which calendar/price this booking used. Null is
+    // treated as OFFLINE server-side (old cached clients, or callers that
+    // predate this feature, e.g. record-past-session). Always re-validated
+    // against the resolved doctor's actual offerings before it's trusted,
+    // never taken at face value — see AppointmentService.bookAppointmentForOwner.
+    @Size(max = 10)
+    private String mode;
+
     // Which practitioner's public booking link this came through — the
     // server resolves this to an owner id, never trusts a raw numeric id
     // from the client.

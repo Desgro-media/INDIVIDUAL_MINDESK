@@ -43,6 +43,13 @@ public class Appointment {
     // Session type selected by the patient (e.g. INITIAL_CONSULTATION)
     private String sessionType;
 
+    // ONLINE or OFFLINE. Nullable only for the startup backfill window (see
+    // StartupInitializer) — every pre-existing row predates this feature
+    // and is backfilled to OFFLINE. Every read path must treat null the
+    // same way, defensively, mirroring how assignedDoctorId==null is
+    // handled elsewhere in this entity.
+    private String mode;
+
     // Optional note / reason from the patient
     @Column(columnDefinition = "TEXT")
     private String notes;

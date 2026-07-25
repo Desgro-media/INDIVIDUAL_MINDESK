@@ -41,18 +41,19 @@ public class DoctorController {
     // slug-scoped /public/{slug}/slots read).
     @GetMapping("/slots")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<String>> getMySlots(@RequestParam LocalDate date) {
+    public ResponseEntity<List<String>> getMySlots(@RequestParam LocalDate date, @RequestParam(required = false) String mode) {
         Long ownerId = currentUserProvider.getCurrentUserId();
         // Clinic closures/holidays are tenant-wide; slot-conflict is scoped
         // to this specific doctor's own calendar (a colleague's booking at
-        // the same time isn't a conflict for me).
+        // the same time isn't a conflict for me). Mode-agnostic, same as
+        // the public /slots endpoint.
         boolean isHoliday = clinicHolidayRepository.findByHolidayDateAndPsychologistId(date, currentUserProvider.getCurrentTenantId()).isPresent();
         Set<String> booked = appointmentRepository.findByAppointmentDateAndAssignedDoctorId(date, ownerId)
                 .stream()
                 .filter(a -> !"CANCELLED".equals(a.getStatus()))
                 .map(a -> a.getStartTime().toString().substring(0, 5))
                 .collect(Collectors.toSet());
-        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(ownerId, date, booked, isHoliday));
+        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(ownerId, date, booked, isHoliday, mode));
     }
 
     // Which services EXIST is a clinic-wide catalog (tenant-scoped); which of
@@ -103,8 +104,9 @@ public class DoctorController {
         LocalDate date = LocalDate.parse((String) body.get("specificDate"));
         String slotTime = (String) body.get("slotTime");
         boolean available = body.get("available") == null || Boolean.parseBoolean(body.get("available").toString());
+        String mode = (String) body.get("mode");
         return ResponseEntity.ok(doctorAvailabilityService.addDateOverride(
-                currentUserProvider.getCurrentUserId(), date, slotTime, available));
+                currentUserProvider.getCurrentUserId(), date, slotTime, available, mode));
     }
 
     @DeleteMapping("/date-overrides/{overrideId}")
@@ -127,20 +129,21 @@ public class DoctorController {
 
     @GetMapping("/availability-blocks")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Map<String, List<Map<String, Object>>>> getAvailabilityBlocks() {
+    public ResponseEntity<Map<String, List<AvailabilityBlockDto>>> getAvailabilityBlocks() {
         return ResponseEntity.ok(doctorAvailabilityService.getAvailabilityBlocks(currentUserProvider.getCurrentUserId()));
     }
 
     @PostMapping("/availability-blocks")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<Map<String, Object>>> addAvailabilityBlocks(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<List<AvailabilityBlockDto>> addAvailabilityBlocks(@RequestBody Map<String, Object> body) {
         @SuppressWarnings("unchecked")
         List<String> days = (List<String>) body.get("daysOfWeek");
         String startTime = (String) body.get("startTime");
         String endTime   = (String) body.get("endTime");
         int interval     = Integer.parseInt(body.get("intervalMinutes").toString());
+        String mode      = (String) body.get("mode");
         return ResponseEntity.ok(doctorAvailabilityService.addAvailabilityBlocks(
-                currentUserProvider.getCurrentUserId(), days, startTime, endTime, interval));
+                currentUserProvider.getCurrentUserId(), days, startTime, endTime, interval, mode));
     }
 
     @DeleteMapping("/availability-blocks/{blockId}")
@@ -152,8 +155,8 @@ public class DoctorController {
 
     @DeleteMapping("/availability-blocks/day/{dayOfWeek}")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> clearDayBlocks(@PathVariable String dayOfWeek) {
-        doctorAvailabilityService.clearDayBlocks(currentUserProvider.getCurrentUserId(), dayOfWeek);
+    public ResponseEntity<Void> clearDayBlocks(@PathVariable String dayOfWeek, @RequestParam(required = false) String mode) {
+        doctorAvailabilityService.clearDayBlocks(currentUserProvider.getCurrentUserId(), dayOfWeek, mode);
         return ResponseEntity.noContent().build();
     }
 

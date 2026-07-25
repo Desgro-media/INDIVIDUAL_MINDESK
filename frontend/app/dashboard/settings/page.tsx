@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   format, eachDayOfInterval, startOfMonth, endOfMonth, getDay, isBefore, isToday, parseISO
@@ -10,7 +10,7 @@ import {
   CheckCircle2, AlertCircle, Loader2, Calendar, ChevronLeft, ChevronRight,
   Landmark, Plus, Trash2, Star, Pencil, QrCode,
   Brain, Upload, ToggleLeft, ToggleRight, Check, Settings, X,
-  Copy, MessageCircle, Send,
+  Copy, MessageCircle, Send, Video, MapPin,
 } from "lucide-react";
 import api from "../../../lib/api";
 import {
@@ -247,13 +247,18 @@ function TimeInput12h({ value, onChange, className = '' }: { value: string; onCh
 }
 
 // ── Tab: Availability ────────────────────────────────────────────────────────
+// Online and in-person are genuinely separate calendars (separate blocks,
+// separate date overrides) — this component fetches both in one call each
+// (every block/override tagged with its own `mode`) and filters client-side
+// by whichever mode tab is active, so switching tabs never refetches.
 function AvailabilityTab() {
+  const [activeMode, setActiveMode] = useState<'OFFLINE' | 'ONLINE'>('OFFLINE');
   const [blocks, setBlocks] = useState<Record<string, AvailabilityBlock[]>>({});
   const [overrides, setOverrides] = useState<DateOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [addingOverride, setAddingOverride] = useState(false);
-  const [overrideForm, setOverrideForm] = useState({ date: '', time: '09:00', available: true });
+  const [overrideForm, setOverrideForm] = useState({ date: '', time: '09:00', available: true, bothModes: true });
 
   const [blockForm, setBlockForm] = useState({
     startTime: '09:00',
@@ -275,6 +280,24 @@ function AvailabilityTab() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+
+  // Only this tab's calendar — a block/override belonging to the other
+  // mode's calendar must never appear here, and vice versa.
+  const blocksForActiveMode = useMemo(() => {
+    const filtered: Record<string, AvailabilityBlock[]> = {};
+    for (const day of DAYS_OF_WEEK) {
+      filtered[day] = (blocks[day] || []).filter(b => b.mode === activeMode);
+    }
+    return filtered;
+  }, [blocks, activeMode]);
+
+  // Whole-day (mode === null) overrides affect every calendar, so they
+  // stay visible on both tabs; mode-specific overrides only show on their
+  // own tab.
+  const overridesForActiveMode = useMemo(
+    () => overrides.filter(o => o.mode === null || o.mode === activeMode),
+    [overrides, activeMode]
+  );
 
   const toggleDay = (day: string) => {
     setBlockForm(f => ({
@@ -300,8 +323,8 @@ function AvailabilityTab() {
     if (blockForm.startTime >= blockForm.endTime) { toast.error('Start time must be before end time'); return; }
     setSaving(true);
     try {
-      await addAvailabilityBlocks(blockForm.selectedDays, blockForm.startTime, blockForm.endTime, blockForm.intervalMinutes);
-      toast.success(`Block applied to ${blockForm.selectedDays.length} day${blockForm.selectedDays.length > 1 ? 's' : ''}`);
+      await addAvailabilityBlocks(blockForm.selectedDays, blockForm.startTime, blockForm.endTime, blockForm.intervalMinutes, activeMode);
+      toast.success(`${activeMode === 'ONLINE' ? 'Online' : 'In-person'} block applied to ${blockForm.selectedDays.length} day${blockForm.selectedDays.length > 1 ? 's' : ''}`);
       setBlockForm(f => ({ ...f, selectedDays: [] }));
       await reload();
     } catch {
@@ -327,10 +350,10 @@ function AvailabilityTab() {
   };
 
   const handleClearDay = async (day: string) => {
-    if (!confirm(`Clear all availability blocks for ${day.charAt(0) + day.slice(1).toLowerCase()}?`)) return;
+    if (!confirm(`Clear all ${activeMode === 'ONLINE' ? 'online' : 'in-person'} availability blocks for ${day.charAt(0) + day.slice(1).toLowerCase()}?`)) return;
     try {
-      await clearDayBlocks(day);
-      setBlocks(prev => ({ ...prev, [day]: [] }));
+      await clearDayBlocks(day, activeMode);
+      setBlocks(prev => ({ ...prev, [day]: (prev[day] || []).filter(b => b.mode !== activeMode) }));
     } catch {
       toast.error('Failed to clear day');
     }
@@ -343,10 +366,17 @@ function AvailabilityTab() {
         specificDate: overrideForm.date,
         slotTime: overrideForm.available && overrideForm.time ? overrideForm.time : undefined,
         available: overrideForm.available,
+        // A whole-day block can apply to both calendars (mode omitted) or
+        // just the tab you're currently on; an extra slot always names a
+        // mode explicitly — the backend rejects a slot-specific override
+        // with no mode.
+        mode: overrideForm.available
+          ? activeMode
+          : (overrideForm.bothModes ? undefined : activeMode),
       });
       await reload();
       setAddingOverride(false);
-      setOverrideForm({ date: '', time: '09:00', available: true });
+      setOverrideForm({ date: '', time: '09:00', available: true, bothModes: true });
       toast.success('Override added');
     } catch {
       toast.error('Failed to add override');
@@ -380,10 +410,26 @@ function AvailabilityTab() {
   return (
     <div className="space-y-6">
 
+      {/* ── Mode switcher — online and in-person are separate calendars ── */}
+      <div className="flex items-center gap-2 p-1 bg-gray-100 rounded-2xl w-fit">
+        {(['OFFLINE', 'ONLINE'] as const).map(m => (
+          <button key={m} type="button" onClick={() => setActiveMode(m)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeMode === m ? 'bg-white text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {m === 'ONLINE' ? <Video className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+            {m === 'ONLINE' ? 'Online' : 'In-person'}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400 -mt-4">
+        {activeMode === 'ONLINE'
+          ? 'Video-call hours — can be completely different from your in-person schedule.'
+          : 'In-person / in-clinic hours — can be completely different from your online schedule.'}
+      </p>
+
       {/* ── Add Block Form ── */}
       <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5">
         <h3 className="text-sm font-bold text-indigo-700 mb-4 flex items-center gap-2">
-          <Calendar className="w-4 h-4" /> Add Availability Block
+          <Calendar className="w-4 h-4" /> Add {activeMode === 'ONLINE' ? 'Online' : 'In-person'} Availability Block
         </h3>
 
         <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -444,11 +490,11 @@ function AvailabilityTab() {
       {/* ── Weekly View ── */}
       <div>
         <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <Calendar className="w-3.5 h-3.5" /> Current Weekly Schedule
+          <Calendar className="w-3.5 h-3.5" /> Current {activeMode === 'ONLINE' ? 'Online' : 'In-person'} Weekly Schedule
         </h3>
         <div className="space-y-2">
           {DAYS_OF_WEEK.map(day => {
-            const dayBlocks = blocks[day] || [];
+            const dayBlocks = blocksForActiveMode[day] || [];
             return (
               <div key={day} className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0">
                 <div className="w-24 flex-shrink-0">
@@ -516,8 +562,25 @@ function AvailabilityTab() {
               </div>
               {overrideForm.available && (
                 <div>
-                  <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold">Slot Time</label>
+                  <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold">
+                    Slot Time ({activeMode === 'ONLINE' ? 'Online' : 'In-person'})
+                  </label>
                   <TimeInput12h className="border-gray-200" value={overrideForm.time} onChange={v => setOverrideForm(f => ({ ...f, time: v }))} />
+                </div>
+              )}
+              {!overrideForm.available && (
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1 uppercase font-semibold">Applies to</label>
+                  <div className="flex gap-2 mt-1">
+                    <button type="button" onClick={() => setOverrideForm(f => ({ ...f, bothModes: true }))}
+                      className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${overrideForm.bothModes ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      Both modes
+                    </button>
+                    <button type="button" onClick={() => setOverrideForm(f => ({ ...f, bothModes: false }))}
+                      className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all ${!overrideForm.bothModes ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                      {activeMode === 'ONLINE' ? 'Online only' : 'In-person only'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -528,20 +591,24 @@ function AvailabilityTab() {
           </div>
         )}
 
-        {overrides.length === 0 ? (
+        {overridesForActiveMode.length === 0 ? (
           <p className="text-xs text-gray-300 py-4 text-center">No date exceptions set</p>
         ) : (
           <div className="space-y-2">
-            {overrides.map(o => (
+            {overridesForActiveMode.map(o => (
               <div key={o.id} className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm ${o.available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <div>
                   <span className={`font-semibold ${o.available ? 'text-green-700' : 'text-red-600'}`}>
                     {format(parseISO(o.specificDate + 'T00:00:00'), 'EEEE, MMM d, yyyy')}
                   </span>
                   {o.available && o.slotTime && (
-                    <span className="ml-2 text-xs text-gray-500">Extra slot at {fmtTime(o.slotTime.substring(0, 5))}</span>
+                    <span className="ml-2 text-xs text-gray-500">Extra {o.mode === 'ONLINE' ? 'online' : 'in-person'} slot at {fmtTime(o.slotTime.substring(0, 5))}</span>
                   )}
-                  {!o.available && <span className="ml-2 text-xs text-red-400">Day blocked</span>}
+                  {!o.available && (
+                    <span className="ml-2 text-xs text-red-400">
+                      {o.mode === null ? 'Day blocked (both modes)' : `${o.mode === 'ONLINE' ? 'Online' : 'In-person'} blocked this day`}
+                    </span>
+                  )}
                 </div>
                 <button onClick={() => handleRemoveOverride(o.id)} className="icon-btn">
                   <Trash2 className="w-4 h-4" />

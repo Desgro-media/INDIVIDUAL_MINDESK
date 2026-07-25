@@ -67,4 +67,12 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     @Modifying
     @Query("UPDATE Appointment a SET a.assignedDoctorId = a.psychologistId WHERE a.assignedDoctorId IS NULL")
     int backfillAssignedDoctorIdFromPsychologistId();
+
+    // One-time, idempotent backfill for rows that predate the online/offline
+    // mode feature — see StartupInitializer. OFFLINE is the only mode that
+    // existed before this feature, so every pre-existing appointment is
+    // backfilled to it.
+    @Modifying
+    @Query("UPDATE Appointment a SET a.mode = 'OFFLINE' WHERE a.mode IS NULL")
+    int backfillModeToOffline();
 }
