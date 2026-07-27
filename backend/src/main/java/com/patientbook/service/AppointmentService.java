@@ -40,6 +40,7 @@ public class AppointmentService {
     private final DoctorAvailabilityService doctorAvailabilityService;
     private final ClinicServiceRepository clinicServiceRepository;
     private final StaffResolutionService staffResolutionService;
+    private final SubscriptionService subscriptionService;
 
     @Lazy
     @Autowired
@@ -62,6 +63,7 @@ public class AppointmentService {
     public AppointmentDto bookAppointment(BookingRequest request) {
         AppUser owner = userRepository.findBySlugAndRole(request.getSlug(), com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
+        requireAcceptingBookings(owner.getId());
         // Validates request.getStaffId() belongs to this clinic and is
         // actually bookable before trusting it — this is what stops a client
         // from booking against a practitioner in a different clinic (the
@@ -69,6 +71,19 @@ public class AppointmentService {
         // the same validator, so both sides agree on who's bookable).
         Long assignedDoctorId = staffResolutionService.resolveBookableDoctorId(owner, request.getStaffId());
         return bookAppointmentForOwner(request, owner.getId(), assignedDoctorId);
+    }
+
+    // A lapsed subscription blocks new bookings from reaching this
+    // practitioner (both the public booking form and the demo-call request),
+    // same as it blocks their own dashboard — see SubscriptionAccessFilter.
+    // Deliberately NOT applied to scheduleManually/bookAppointmentForOwner:
+    // that path is already unreachable while lapsed since it sits behind the
+    // authenticated dashboard API, which SubscriptionAccessFilter gates
+    // directly; duplicating the check there would be redundant.
+    private void requireAcceptingBookings(Long tenantId) {
+        if (!subscriptionService.isAccessAllowed(tenantId)) {
+            throw new IllegalStateException("This practitioner isn't currently accepting new bookings.");
+        }
     }
 
     // ── Manual scheduling from the dashboard ───────────────────────────────
@@ -324,6 +339,7 @@ public class AppointmentService {
     public AppointmentDto requestDemoCall(DemoBookingRequest request) {
         AppUser owner = userRepository.findBySlugAndRole(request.getSlug(), com.patientbook.security.Roles.PSYCHOLOGIST)
                 .orElseThrow(() -> new ResourceNotFoundException("No such booking link"));
+        requireAcceptingBookings(owner.getId());
 
         String demoEmail = (request.getPatientEmail() != null && !request.getPatientEmail().isBlank())
                 ? request.getPatientEmail().trim() : null;
