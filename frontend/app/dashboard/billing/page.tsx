@@ -61,6 +61,7 @@ export default function BillingPage() {
   const [services, setServices]       = useState<Record<string, string>>({});
   const [bankAccountName, setBankAccountName] = useState<string>("");
   const [loading, setLoading]         = useState(true);
+  const [loadError, setLoadError]     = useState(false);
   const [filter, setFilter]           = useState<"ALL" | "UNPAID" | "PAID" | "WAIVED">("ALL");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
 
@@ -74,13 +75,18 @@ export default function BillingPage() {
 
 
   const fetchData = () => {
+    setLoading(true);
+    setLoadError(false);
     Promise.all([
       api.get("/invoices"),
       api.get("/invoices/summary"),
     ]).then(([invRes, sumRes]) => {
       setInvoices(invRes.data);
       setSummary(sumRes.data);
-    }).catch(console.error).finally(() => setLoading(false));
+    }).catch(err => {
+      console.error(err);
+      setLoadError(true);
+    }).finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -249,7 +255,13 @@ export default function BillingPage() {
       </div>
 
       {/* Summary Cards — reflect the selected month when one is chosen */}
-      {displaySummary && (
+      {loading ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 }}>
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="skel" style={{ height: 128, width: "100%", borderRadius: 16 }} />
+          ))}
+        </div>
+      ) : displaySummary && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 }}>
           {[
             { label: monthFilter ? `Revenue · ${monthLabel(monthFilter)}` : "Total Revenue", value: fmt(displaySummary.totalRevenue), icon: <TrendingUp />, badge: "icon-badge--success", color: "var(--success)" },
@@ -268,7 +280,7 @@ export default function BillingPage() {
                 {card.label}
               </p>
               <p style={{ fontSize: 28, fontWeight: 800, color: card.color, lineHeight: 1 }}>
-                {loading ? "—" : card.value}
+                {card.value}
               </p>
             </SpotlightDiv>
           ))}
@@ -329,6 +341,13 @@ export default function BillingPage() {
               <div key={i} className="skel" style={{ height: 44, width: "100%", borderRadius: 12 }} />
             ))}
           </div>
+        ) : loadError ? (
+          <div style={{ padding: "60px 20px", textAlign: "center" }}>
+            <AlertTriangle style={{ width: 40, height: 40, color: "var(--danger)", margin: "0 auto 12px" }} />
+            <p style={{ color: "var(--text-2)", fontSize: 14, fontWeight: 600 }}>Couldn't load billing data.</p>
+            <p style={{ color: "var(--text-3)", fontSize: 12, marginTop: 4, marginBottom: 16 }}>Check your connection and try again.</p>
+            <button onClick={fetchData} className="btn-nm-accent" style={{ padding: "10px 20px" }}>Retry</button>
+          </div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: "60px 20px", textAlign: "center" }}>
             <Receipt style={{ width: 40, height: 40, color: "var(--text-3)", margin: "0 auto 12px" }} />
@@ -363,9 +382,9 @@ export default function BillingPage() {
                       <tr key={inv.id} className="list-row"
                         style={{ borderBottom: "1px solid var(--glass-border-dim)" }}>
 
-                        {/* Date */}
+                        {/* Date — same transaction date the row is sorted/filtered by */}
                         <td style={{ padding: "14px 16px", color: "var(--text-2)", whiteSpace: "nowrap" }}>
-                          {fmtDate(inv.appointmentDate)}
+                          {fmtDate(txnDate(inv))}
                         </td>
 
                         {/* Amount */}

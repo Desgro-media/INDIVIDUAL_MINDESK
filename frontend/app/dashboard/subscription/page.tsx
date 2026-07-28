@@ -27,7 +27,10 @@ const SUBMISSION_STYLE: Record<string, { color: string; bg: string; icon: React.
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  // Backend LocalDateTime values are serialized without a timezone but are
+  // UTC wall-clock time — append "Z" so this parses the same way staff
+  // attendance timestamps do, instead of being misread as local time.
+  return new Date(iso + "Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function fmtMoney(n: number | null | undefined): string {
@@ -114,7 +117,7 @@ export default function SubscriptionPage() {
             <p style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>Your dashboard is locked</p>
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
               Your trial/subscription has ended. Pay via GPay/UPI below and submit your transaction reference —
-              your dashboard unlocks as soon as it's verified. Your public booking page keeps working for patients in the meantime.
+              your dashboard and your public booking page both unlock as soon as it's verified. New patients can't book with you until then.
             </p>
           </div>
         </div>

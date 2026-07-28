@@ -263,7 +263,11 @@ export default function BookingPage() {
   const supportsOffline = sessionTypes.some(s => s.offlineOffered);
   const stepKeys: StepKey[] = [
     "details",
-    ...(isClinic ? (["practitioner"] as StepKey[]) : []),
+    // A clinic with exactly one bookable practitioner auto-selects them and
+    // the flow never visits the "practitioner" step (see `next()` below) —
+    // so it must be left out of the dots too, or the count/label the
+    // patient sees includes a step they'll never see.
+    ...(isClinic && staffList.length > 1 ? (["practitioner"] as StepKey[]) : []),
     ...(supportsOnline && supportsOffline ? (["mode"] as StepKey[]) : []),
     "session", "schedule", "confirm",
   ];
@@ -388,6 +392,14 @@ export default function BookingPage() {
     setSelectedMode(null);
     resetDownstreamSelection();
     setCurrentStep("mode");
+    // Mark sessions as loading in this same batch so the mode-auto-skip
+    // effect below (which also fires on this render) sees sessionsLoading
+    // already true and waits — otherwise it can read the OUTGOING
+    // practitioner's already-resolved supportsOnline/supportsOffline for a
+    // beat before the new fetch (triggered by selectedStaffId changing)
+    // resolves, and auto-advance past Mode using the wrong practitioner's
+    // capabilities.
+    setSessionsLoading(true);
   };
 
   const next = () => {

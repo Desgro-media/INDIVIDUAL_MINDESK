@@ -51,9 +51,6 @@ export const updateStaff = (id: number, payload: UpdateStaffPayload) =>
 export const updatePermissions = (id: number, permissions: string[]) =>
     api.put<StaffMember>(`/staff/${id}/permissions`, permissions).then(r => r.data);
 
-export const updateStaffDetails = (id: number, details: { name?: string; role?: string }) =>
-    api.patch<StaffMember>(`/staff/${id}/details`, details).then(r => r.data);
-
 // "Delete" deactivates — see StaffService.deactivateStaff. Blocks login and
 // public bookability without losing historical appointment/invoice/note
 // attribution.

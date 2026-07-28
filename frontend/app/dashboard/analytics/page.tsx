@@ -192,7 +192,7 @@ export default function AnalyticsPage() {
     } else {
       activeClientsCount = allTimeActive;
       returningClientsCount = allTimeReturning;
-      newClientsCount = patients.filter(p => new Date(p.createdAt) >= thirtyDaysAgo).length;
+      newClientsCount = patients.filter(p => new Date(p.createdAt + "Z") >= thirtyDaysAgo).length;
       retentionRate = patients.length > 0 ? Math.round((allTimeReturning / patients.length) * 100) : 0;
     }
 
@@ -285,14 +285,14 @@ export default function AnalyticsPage() {
 
     // Add current month minus 1 as a baseline if we only have 1 month of data
     if (patients.length > 0) {
-      const firstPatientDate = new Date(Math.min(...patients.map(p => new Date(p.createdAt).getTime())));
+      const firstPatientDate = new Date(Math.min(...patients.map(p => new Date(p.createdAt + "Z").getTime())));
       const prevMonthDate = new Date(firstPatientDate.getFullYear(), firstPatientDate.getMonth() - 1, 1);
       const prevMonth = prevMonthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       growthCounts[prevMonth] = 0;
     }
 
     patients.forEach(p => {
-      const month = new Date(p.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      const month = new Date(p.createdAt + "Z").toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       growthCounts[month] = (growthCounts[month] || 0) + 1;
     });
 
