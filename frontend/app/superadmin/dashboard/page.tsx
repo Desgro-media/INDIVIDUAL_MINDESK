@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   ShieldCheck, LogOut, Users, CheckCircle2, XCircle,
@@ -664,7 +665,7 @@ export default function SuperAdminDashboardPage() {
       </div>
 
       {/* Reject modal */}
-      {rejectTarget && (
+      {rejectTarget && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} onClick={() => setRejectTarget(null)} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", padding: 28, width: 400, maxWidth: "90vw" }}>
@@ -685,7 +686,8 @@ export default function SuperAdminDashboardPage() {
               Confirm Rejection
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

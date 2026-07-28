@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus, Pencil, X, Loader2, Check, Clock, UserCog,
   ShieldCheck, ShieldOff, RefreshCw, Brain, UserCheck,
@@ -162,7 +163,7 @@ export default function StaffPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }} className="anim-fade-up">
 
-      {toast && (
+      {toast && typeof document !== "undefined" && createPortal(
         <div className="soft-card anim-fade-in" style={{
           position: "fixed", top: 24, right: 24, zIndex: 100,
           display: "flex", alignItems: "center", gap: 10,
@@ -171,7 +172,8 @@ export default function StaffPage() {
         }}>
           {toast.isError ? <AlertCircle style={{ width: 16, height: 16 }} /> : <CheckCircle2 style={{ width: 16, height: 16 }} />}
           {toast.text}
-        </div>
+        </div>,
+        document.body
       )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -267,7 +269,7 @@ export default function StaffPage() {
 
       {tab === "attendance" && <AttendanceTab />}
 
-      {showModal && (
+      {showModal && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }} onClick={() => setShowModal(false)} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
@@ -382,7 +384,8 @@ export default function StaffPage() {
               </button>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

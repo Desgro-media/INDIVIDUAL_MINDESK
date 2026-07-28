@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   Receipt, CheckCircle2, Clock, TrendingUp,
   CreditCard, Wallet, Building2, Banknote, X, Filter, ArrowDownCircle, Landmark, AlertTriangle
@@ -587,7 +588,7 @@ export default function BillingPage() {
       </div>
 
       {/* Pay Modal */}
-      {payModal && (
+      {payModal && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} onClick={() => setPayModal(null)} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", padding: 32, width: 420, maxWidth: "90vw", maxHeight: "90vh", overflowY: "auto" }}>
@@ -672,7 +673,8 @@ export default function BillingPage() {
               {saving ? "Saving..." : "Confirm Payment"}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>
