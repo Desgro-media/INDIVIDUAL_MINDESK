@@ -262,13 +262,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ...(hasPermission("APPOINTMENTS") ? [{ label: "Appointments", icon: Calendar, path: "/dashboard/appointments", group: "Manage", badge: pendingCount }] : []),
         ...(hasPermission("PATIENTS") ? [{ label: "Patients", icon: Users, path: "/dashboard/patients", group: "Manage" }] : []),
         ...(hasPermission("BILLING") ? [{ label: "Billing", icon: Receipt, path: "/dashboard/billing", group: "Manage" }] : []),
-        ...(hasPermission("SETTINGS") ? [{ label: "Services", icon: Sparkles, path: "/dashboard/services", group: "Manage" }] : []),
+        // Services (self-pricing) is now owner-managed for clinic staff — see
+        // Staff Management's Schedule & Pricing panel — so staff never get
+        // this nav item regardless of permission; only a clinic owner or an
+        // individual practitioner manages the catalog/their own pricing here.
+        ...(hasPermission("SETTINGS") && !isStaff ? [{ label: "Services", icon: Sparkles, path: "/dashboard/services", group: "Manage" }] : []),
         ...(isClinicOwner ? [{ label: "Staff", icon: UserCog, path: "/dashboard/staff", group: "Manage" }] : []),
         // A staff-doctor needs the Settings page even without the SETTINGS
-        // permission — it's the only UI for their own bio/services/
-        // availability (the /me/** endpoints, self-scoped by construction).
-        // The page itself hides the clinic-wide tabs (Practice/Payment/
-        // Holidays) unless SETTINGS is actually granted — see settings/page.tsx.
+        // permission — it's the only UI for their own bio (the /me/**
+        // endpoints, self-scoped by construction). The page itself hides the
+        // clinic-wide tabs (Practice/Payment/Holidays) and the Availability
+        // tab (now owner-managed) unless applicable — see settings/page.tsx.
         ...(hasPermission("SETTINGS") || isStaffDoctor ? [{ label: "Settings", icon: Settings, path: "/dashboard/settings", group: "System" }] : []),
         ...(!isStaff ? [{ label: "Subscription", icon: ShieldCheck, path: "/dashboard/subscription", group: "System", badge: subscriptionBadge }] : []),
       ];
