@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "next/navigation";
 import {
   Check, X, Search, RefreshCw, Calendar, Clock,
   AlertCircle, Phone, Mail, FileText, Tag,
@@ -13,6 +14,7 @@ import { SpotlightDiv } from "../../../components/Spotlight";
 
 type Appointment = {
   id: number;
+  patientId?: number | null;
   patientName: string;
   patientEmail: string;
   patientPhone: string;
@@ -41,10 +43,17 @@ const STATUS_CFG: Record<string, { label: string; textColor: string; bgColor: st
 
 const FILTER_TABS = ["ALL", "DEMO_CALL_PENDING", "PENDING", "AWAITING_PAYMENT", "PAYMENT_UNDER_REVIEW", "CONFIRMED", "COMPLETED", "CANCELLED"];
 
-export default function AppointmentsPage() {
+function AppointmentsView() {
+  const searchParams = useSearchParams();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // Deep-linked from Analytics' "Follow-ups Due" alerts (?patient=<id>) —
+  // read once on mount, cleared via the chip below.
+  const [patientIdFilter, setPatientIdFilter] = useState<number | null>(() => {
+    const raw = searchParams.get("patient");
+    return raw ? Number(raw) : null;
+  });
   const [activeFilter, setActiveFilter] = useState("ALL");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
   const [selected, setSelected] = useState<Appointment | null>(null);
@@ -57,9 +66,11 @@ export default function AppointmentsPage() {
   const [convertDialog, setConvertDialog] = useState<{ open: boolean; id: number | null; sessionType?: string }>({ open: false, id: null });
   const [convertForm, setConvertForm] = useState({ appointmentDate: "", startTime: "", sessionType: "", mode: "OFFLINE" as "ONLINE" | "OFFLINE" });
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (text: string, type: "success" | "error") => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ text, type });
-    setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
   const fetchAppointments = useCallback(async () => {
@@ -186,7 +197,8 @@ export default function AppointmentsPage() {
     const matchSearch = !search ||
       a.patientName.toLowerCase().includes(search.toLowerCase()) ||
       a.patientEmail.toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
+    const matchPatient = !patientIdFilter || a.patientId === patientIdFilter;
+    return matchStatus && matchSearch && matchPatient;
   });
 
   const counts: Record<string, number> = { ALL: monthAppointments.length };
@@ -309,6 +321,15 @@ export default function AppointmentsPage() {
               style={{ paddingLeft: 40 }}
             />
           </div>
+          {patientIdFilter && (
+            <button
+              onClick={() => setPatientIdFilter(null)}
+              className="btn-nm"
+              style={{ padding: "8px 14px", borderRadius: 50, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, color: "var(--accent)" }}
+            >
+              Filtered to one patient <X style={{ width: 12, height: 12 }} />
+            </button>
+          )}
           <MonthFilter months={availableMonths} value={monthFilter} onChange={setMonthFilter} />
           <button
             onClick={fetchAppointments}
@@ -936,5 +957,13 @@ export default function AppointmentsPage() {
         document.body
       )}
     </div>
+  );
+}
+
+export default function AppointmentsPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "60vh" }} />}>
+      <AppointmentsView />
+    </Suspense>
   );
 }

@@ -45,6 +45,7 @@ public class PublicController {
     private final com.patientbook.repository.ClinicHolidayRepository clinicHolidayRepository;
     private final com.patientbook.repository.AppointmentRepository appointmentRepository;
     private final StaffResolutionService staffResolutionService;
+    private final com.patientbook.service.SubscriptionService subscriptionService;
 
     @GetMapping("/info")
     public ResponseEntity<Map<String, Object>> getInfo(@PathVariable String slug) {
@@ -58,6 +59,11 @@ public class PublicController {
         info.put("bio", owner.getBio());
         info.put("profileImageUrl", owner.getProfileImageUrl());
         info.put("bookable", owner.isBookable());
+        // Tenant-wide billing gate, distinct from "bookable" above (which is
+        // this one practitioner's personal toggle) — a clinic's whole staff
+        // roster goes un-bookable together when the OWNER's subscription
+        // lapses, since billing is per-tenant, not per-staff-member.
+        info.put("acceptingBookings", subscriptionService.isAccessAllowed(owner.getId()));
         // INDIVIDUAL or CLINIC — tells the booking wizard whether to render a
         // practitioner-picker step. Pre-clinic-feature accounts have no
         // accountType set; treat that as INDIVIDUAL (their actual behavior).

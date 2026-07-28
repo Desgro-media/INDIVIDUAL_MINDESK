@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
   Sparkles, Brain, Heart, Users, RefreshCw, HelpCircle,
@@ -82,10 +82,12 @@ export default function ServicesPage() {
   const [modeForm, setModeForm] = useState<ModeForm>(emptyModeForm(0));
   const [formError, setFormError] = useState("");
   const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flash = (text: string, isError = false) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ text, isError });
-    setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
   const fetchAll = async () => {

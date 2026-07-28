@@ -18,9 +18,14 @@ import java.util.List;
 import java.util.Optional;
 
 // Gates the tenant dashboard API once a practitioner's trial/subscription has
-// lapsed — per product decision, this blocks ONLY the dashboard, never the
-// public booking surface (/book/{slug} etc. keep working for their existing
-// patients regardless of billing state).
+// lapsed. Public booking (/book/{slug} etc.) is exempt HERE because those
+// requests are unauthenticated — there's no JWT identifying which
+// practitioner to check, only a slug in the path — so it can't be gated by
+// this filter at all. That surface is instead gated directly inside
+// AppointmentService.bookAppointment()/requestDemoCall() (and surfaced ahead
+// of time via PublicController's "acceptingBookings" info field), which
+// resolve the practitioner from the slug and can check their subscription
+// there.
 //
 // Runs after JwtAuthenticationFilter (needs SecurityContextHolder already
 // populated) and before the request reaches any controller. The actual

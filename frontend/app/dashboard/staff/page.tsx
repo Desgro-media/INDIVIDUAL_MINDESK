@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus, Pencil, X, Loader2, Check, Clock, UserCog,
   ShieldCheck, ShieldOff, RefreshCw, Brain, UserCheck,
@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { SpotlightDiv } from "../../../components/Spotlight";
 import {
-  getAllStaff, createStaff, updateStaff, updatePermissions, updateStaffDetails,
+  getAllStaff, createStaff, updateStaff, updatePermissions,
   deactivateStaff, reactivateStaff, getAllAttendance, getActiveStaff,
   StaffMember, AttendanceRecord, CreateStaffPayload,
 } from "../../../lib/staffApi";
@@ -61,10 +61,12 @@ export default function StaffPage() {
   const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [savingPermsFor, setSavingPermsFor] = useState<number | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flash = (text: string, isError = false) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ text, isError });
-    setTimeout(() => setToast(null), 3000);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   };
 
   const fetchStaff = useCallback(async () => {
@@ -399,14 +401,22 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(member.name);
   const [role, setRole] = useState(member.role);
+  const [jobTitle, setJobTitle] = useState(member.jobTitle ?? "");
   const [saving, setSaving] = useState(false);
   const isDoctor = member.role === "ROLE_PSYCHOLOGIST";
+
+  const openEdit = () => {
+    setName(member.name);
+    setRole(member.role);
+    setJobTitle(member.jobTitle ?? "");
+    setEditing(true);
+  };
 
   const handleSave = async () => {
     if (!name.trim()) { flash("Name cannot be empty.", true); return; }
     setSaving(true);
     try {
-      await updateStaffDetails(member.id, { name: name.trim(), role });
+      await updateStaff(member.id, { name: name.trim(), role, jobTitle: jobTitle.trim() });
       flash("Staff details updated.");
       setEditing(false);
       onRefresh();
@@ -428,11 +438,15 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
             {editing ? (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <input value={name} onChange={e => setName(e.target.value)}
+                  placeholder="Full name"
                   className="nm-input" style={{ fontSize: 12, padding: "6px 10px", width: 160 }} />
                 <select value={role} onChange={e => setRole(e.target.value)}
                   className="nm-input" style={{ fontSize: 12, padding: "6px 10px" }}>
                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
+                <input value={jobTitle} onChange={e => setJobTitle(e.target.value)}
+                  placeholder="Job title"
+                  className="nm-input" style={{ fontSize: 12, padding: "6px 10px", width: 160 }} />
                 <button onClick={handleSave} disabled={saving} className="btn-nm-accent" style={{ padding: "6px 14px", fontSize: 11 }}>
                   {saving ? "…" : "Save"}
                 </button>
@@ -461,7 +475,7 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
         </div>
         {!editing && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => setEditing(true)} className="icon-btn" title="Edit name & role">
+            <button onClick={openEdit} className="icon-btn" title="Edit name, role & job title">
               <Pencil style={{ width: 14, height: 14 }} />
             </button>
             {member.enabled ? (

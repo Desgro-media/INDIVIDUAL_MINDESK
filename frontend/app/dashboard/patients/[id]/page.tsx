@@ -521,16 +521,28 @@ export default function ClientTimelinePage() {
   };
 
   const openScheduleModal = () => {
+    setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE");
+    setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
+    setAvailableSlots([]);
     setScheduleModalOpen(true);
     fetchServices();
     const defaultAcc = bankAccounts.find(b => b.isDefault) ?? bankAccounts[0] ?? null;
-    if (defaultAcc) { setSchedBankAccountId(defaultAcc.id); setSchedBankAccountName(defaultAcc.accountName); }
+    setSchedBankAccountId(defaultAcc?.id ?? "");
+    setSchedBankAccountName(defaultAcc?.accountName ?? "");
   };
   const openPastModal = () => {
+    setPastDate(""); setPastTime(""); setPastType(""); setPastMode("OFFLINE"); setPastNotes(""); setPastStatus("COMPLETED");
+    setPastPayStatus("PAID"); setPastPayAmount(""); setPastPayMethod("CASH");
     setPastModalOpen(true);
     fetchServices();
     const defaultAcc = bankAccounts.find(b => b.isDefault) ?? bankAccounts[0] ?? null;
-    if (defaultAcc) { setPastBankAccountId(defaultAcc.id); setPastBankAccountName(defaultAcc.accountName); }
+    setPastBankAccountId(defaultAcc?.id ?? "");
+    setPastBankAccountName(defaultAcc?.accountName ?? "");
+  };
+  const openNoteModal = () => {
+    setNoteSessionId("");
+    setModalNoteText("");
+    setNoteModalOpen(true);
   };
 
   const handleSchedule = async () => {
@@ -689,31 +701,37 @@ export default function ClientTimelinePage() {
 
     const completed = appointments.filter(a => a.status === "COMPLETED" || a.status === "CONFIRMED");
     const cancelled = appointments.filter(a => a.status === "CANCELLED");
-    const pastAppointments = appointments.filter(a => new Date(a.appointmentDate) < new Date());
-    
+    // appointmentDate is a date-only string ("YYYY-MM-DD") — parsed bare it's
+    // read as UTC midnight, which for timezones ahead of UTC can already be
+    // hours into "today" by the time this runs, wrongly bucketing a
+    // same-day appointment as past. Force local-midnight parsing instead,
+    // consistent with the rest of the timeline (see apt.appointmentDate + "T00:00:00" above).
+    const asLocalDate = (d: string) => new Date(d + "T00:00:00");
+    const pastAppointments = appointments.filter(a => asLocalDate(a.appointmentDate) < new Date());
+
     // Attendance rate
-    const attendanceRate = pastAppointments.length > 0 
-      ? Math.round((pastAppointments.filter(a => a.status === "COMPLETED").length / pastAppointments.length) * 100) 
+    const attendanceRate = pastAppointments.length > 0
+      ? Math.round((pastAppointments.filter(a => a.status === "COMPLETED").length / pastAppointments.length) * 100)
       : 100;
 
     // Sorting to find first/last easily
-    const sorted = [...completed].sort((a, b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime());
-    
+    const sorted = [...completed].sort((a, b) => asLocalDate(a.appointmentDate).getTime() - asLocalDate(b.appointmentDate).getTime());
+
     let avgGap = 0;
     if (sorted.length > 1) {
-      const firstDate = new Date(sorted[0].appointmentDate).getTime();
-      const lastDate = new Date(sorted[sorted.length - 1].appointmentDate).getTime();
+      const firstDate = asLocalDate(sorted[0].appointmentDate).getTime();
+      const lastDate = asLocalDate(sorted[sorted.length - 1].appointmentDate).getTime();
       const daysDiff = (lastDate - firstDate) / (1000 * 60 * 60 * 24);
       avgGap = Math.round(daysDiff / (sorted.length - 1));
     }
 
-    const futureAppointments = appointments.filter(a => new Date(a.appointmentDate) >= new Date() && (a.status === "AWAITING_PAYMENT" || a.status === "PAYMENT_UNDER_REVIEW" || a.status === "CONFIRMED"));
-    const upcomingFollowUp = futureAppointments.length > 0 
-      ? futureAppointments.sort((a,b) => new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime())[0].appointmentDate
+    const futureAppointments = appointments.filter(a => asLocalDate(a.appointmentDate) >= new Date() && (a.status === "AWAITING_PAYMENT" || a.status === "PAYMENT_UNDER_REVIEW" || a.status === "CONFIRMED"));
+    const upcomingFollowUp = futureAppointments.length > 0
+      ? futureAppointments.sort((a,b) => asLocalDate(a.appointmentDate).getTime() - asLocalDate(b.appointmentDate).getTime())[0].appointmentDate
       : null;
 
-    const treatmentDuration = sorted.length > 1 
-      ? Math.round((new Date(sorted[sorted.length - 1].appointmentDate).getTime() - new Date(sorted[0].appointmentDate).getTime()) / (1000 * 60 * 60 * 24))
+    const treatmentDuration = sorted.length > 1
+      ? Math.round((asLocalDate(sorted[sorted.length - 1].appointmentDate).getTime() - asLocalDate(sorted[0].appointmentDate).getTime()) / (1000 * 60 * 60 * 24))
       : 0;
 
     let progressTrend = "Stable";
@@ -761,7 +779,7 @@ export default function ClientTimelinePage() {
     text += `Primary recurring themes discussed include ${topics}. `;
 
     if (metrics.upcomingFollowUp) {
-      text += `The next follow-up is scheduled for ${new Date(metrics.upcomingFollowUp).toLocaleDateString()}, where focus should remain on current coping strategies.`;
+      text += `The next follow-up is scheduled for ${new Date(metrics.upcomingFollowUp + "T00:00:00").toLocaleDateString()}, where focus should remain on current coping strategies.`;
     } else {
       text += `No upcoming follow-up is currently scheduled; it is recommended to reach out for continuation of care.`;
     }
@@ -853,7 +871,7 @@ export default function ClientTimelinePage() {
         </div>
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button onClick={() => setNoteModalOpen(true)} className="btn-nm"
+          <button onClick={openNoteModal} className="btn-nm"
             style={{ padding: "10px 16px", gap: 8, fontWeight: 700, fontSize: 13, color: "var(--text-1)" }}>
             <Plus style={{ width: 15, height: 15, color: "var(--accent)" }} /> Add Note
           </button>
@@ -935,7 +953,7 @@ export default function ClientTimelinePage() {
                 <div className="soft-card-2" style={{ padding: 16, borderRadius: 16 }}>
                   <p style={{ fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Next Follow-up</p>
                   <p style={{ fontSize: 15, fontWeight: 700, color: metrics.upcomingFollowUp ? "var(--text-1)" : "var(--text-3)" }}>
-                    {metrics.upcomingFollowUp ? new Date(metrics.upcomingFollowUp).toLocaleDateString() : "Not Scheduled"}
+                    {metrics.upcomingFollowUp ? new Date(metrics.upcomingFollowUp + "T00:00:00").toLocaleDateString() : "Not Scheduled"}
                   </p>
                 </div>
                 <div className="soft-card-2" style={{ padding: 16, borderRadius: 16 }}>
@@ -1075,13 +1093,13 @@ export default function ClientTimelinePage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: "1px solid var(--card-border)" }}>
                   <span style={{ fontSize: 13, color: "var(--text-3)" }}>First Visit</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
-                    {metrics.firstVisit ? new Date(metrics.firstVisit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                    {metrics.firstVisit ? new Date(metrics.firstVisit + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: "1px solid var(--card-border)" }}>
                   <span style={{ fontSize: 13, color: "var(--text-3)" }}>Last Visit</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)" }}>
-                    {metrics.lastVisit ? new Date(metrics.lastVisit).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
+                    {metrics.lastVisit ? new Date(metrics.lastVisit + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1263,7 +1281,7 @@ export default function ClientTimelinePage() {
                                 startTime: apt.startTime,
                                 sessionType: apt.sessionType || "",
                                 notes: apt.notes || "",
-                                mode: "",
+                                mode: apt.mode || "",
                               });
                               setEditSessionOpen(true);
                             }}
@@ -1516,7 +1534,12 @@ export default function ClientTimelinePage() {
                   className="nm-input" 
                   style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
                   value={noteSessionId}
-                  onChange={e => setNoteSessionId(Number(e.target.value))}
+                  onChange={e => {
+                    const id = Number(e.target.value);
+                    setNoteSessionId(id);
+                    const apt = appointments.find(a => a.id === id);
+                    setModalNoteText(apt?.notes || "");
+                  }}
                 >
                   <option value="">-- Choose a session --</option>
                   {appointments.filter(a => a.status === "COMPLETED" || a.status === "CONFIRMED").map(a => (

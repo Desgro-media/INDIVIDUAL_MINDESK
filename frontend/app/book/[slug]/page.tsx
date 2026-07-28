@@ -66,6 +66,7 @@ interface PractitionerInfo {
   bio: string | null;
   profileImageUrl: string | null;
   bookable: boolean;
+  acceptingBookings: boolean;
   accountType: "INDIVIDUAL" | "CLINIC";
   clinicName: string | null;
   address: string | null;
@@ -262,7 +263,11 @@ export default function BookingPage() {
   const supportsOffline = sessionTypes.some(s => s.offlineOffered);
   const stepKeys: StepKey[] = [
     "details",
-    ...(isClinic ? (["practitioner"] as StepKey[]) : []),
+    // A clinic with exactly one bookable practitioner auto-selects them and
+    // the flow never visits the "practitioner" step (see `next()` below) —
+    // so it must be left out of the dots too, or the count/label the
+    // patient sees includes a step they'll never see.
+    ...(isClinic && staffList.length > 1 ? (["practitioner"] as StepKey[]) : []),
     ...(supportsOnline && supportsOffline ? (["mode"] as StepKey[]) : []),
     "session", "schedule", "confirm",
   ];
@@ -387,6 +392,14 @@ export default function BookingPage() {
     setSelectedMode(null);
     resetDownstreamSelection();
     setCurrentStep("mode");
+    // Mark sessions as loading in this same batch so the mode-auto-skip
+    // effect below (which also fires on this render) sees sessionsLoading
+    // already true and waits — otherwise it can read the OUTGOING
+    // practitioner's already-resolved supportsOnline/supportsOffline for a
+    // beat before the new fetch (triggered by selectedStaffId changing)
+    // resolves, and auto-advance past Mode using the wrong practitioner's
+    // capabilities.
+    setSessionsLoading(true);
   };
 
   const next = () => {
@@ -468,8 +481,11 @@ export default function BookingPage() {
   // clinic OWNER's own flag — the clinic itself might still have bookable
   // staff even if the owner personally isn't one of them, so that check is
   // skipped here; an empty staff roster is instead handled gracefully
-  // inside the practitioner-picker step above.
-  if (notFound || (practitioner && !isClinic && !practitioner.bookable)) {
+  // inside the practitioner-picker step above. "acceptingBookings" is
+  // different: it's the whole tenant's billing state, so unlike "bookable"
+  // it applies even for a clinic — a lapsed subscription takes the entire
+  // staff roster off the booking flow together, not just the owner.
+  if (notFound || (practitioner && !isClinic && !practitioner.bookable) || (practitioner && !practitioner.acceptingBookings)) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 20, textAlign: "center" }}>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--text-1)" }}>This booking link isn&apos;t available</h1>

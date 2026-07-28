@@ -2,6 +2,7 @@ package com.patientbook.controller;
 
 import com.patientbook.service.ResourceNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -31,6 +32,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, String>> handleConflict(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
+    }
+
+    // Two concurrent writes to the same row (e.g. a submission approved
+    // and rejected in the same instant by two admin tabs) — same 409
+    // semantics as the PENDING-status conflict above, just caught at the
+    // DB layer instead of the status check.
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<Map<String, String>> handleOptimisticLock(OptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("message", "This record was just updated elsewhere. Please refresh and try again."));
     }
 
     // Re-throw so Spring Security's AccessDeniedHandler returns the correct 403.

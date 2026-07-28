@@ -49,4 +49,15 @@ public class PaymentSubmission {
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
+
+    // Optimistic lock: closes a TOCTOU gap where two near-simultaneous
+    // approve()/reject() calls on the same submission could both read
+    // status=PENDING before either commits, double-extending the
+    // subscription period. "default 0" so ddl-auto=update backfills
+    // existing rows instead of leaving them null (a null version never
+    // matches on update, which would hard-lock every pre-existing
+    // submission out of being reviewed).
+    @Version
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    private Long version;
 }
