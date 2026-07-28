@@ -1,8 +1,12 @@
 import api from './api';
 
-// Everything here always operates on the logged-in practitioner's own
-// account — there is no id parameter, because there is no one else's data
-// to manage.
+// Most functions here operate on the logged-in practitioner's own account
+// (/me/**). Availability, date overrides, and service pricing also accept an
+// optional trailing `staffId` — when a clinic owner passes their own staff
+// member's id, the call is redirected to /staff/{staffId}/** instead, which
+// is ownership-checked server-side (see StaffAvailabilityController). This
+// lets the exact same UI components manage either "my own" schedule or a
+// clinic owner managing a staff member's schedule on their behalf.
 
 // mode is optional — omit it for the mode-agnostic manual-scheduling flows
 // that haven't been updated to collect it yet; the backend defaults to
@@ -27,8 +31,8 @@ export interface DoctorServicePrice {
     offlineOffered: boolean;
 }
 
-export const getMyServices = async (): Promise<DoctorServicePrice[]> => {
-    const res = await api.get('/me/services');
+export const getMyServices = async (staffId?: number): Promise<DoctorServicePrice[]> => {
+    const res = await api.get(staffId ? `/staff/${staffId}/services` : '/me/services');
     return res.data;
 };
 
@@ -38,8 +42,8 @@ export const saveMyServices = async (services: {
     offlinePrice: number;
     onlineOffered: boolean;
     offlineOffered: boolean;
-}[]): Promise<DoctorServicePrice[]> => {
-    const res = await api.put('/me/services', services);
+}[], staffId?: number): Promise<DoctorServicePrice[]> => {
+    const res = await api.put(staffId ? `/staff/${staffId}/services` : '/me/services', services);
     return res.data;
 };
 
@@ -57,8 +61,8 @@ export interface AvailabilityBlock {
 // Returns blocks for BOTH calendars in one call, each tagged with `mode` —
 // group/filter client-side per the active Settings tab rather than
 // refetching per tab switch.
-export const getAvailabilityBlocks = async (): Promise<Record<string, AvailabilityBlock[]>> => {
-    const res = await api.get('/me/availability-blocks');
+export const getAvailabilityBlocks = async (staffId?: number): Promise<Record<string, AvailabilityBlock[]>> => {
+    const res = await api.get(staffId ? `/staff/${staffId}/availability-blocks` : '/me/availability-blocks');
     return res.data;
 };
 
@@ -67,21 +71,23 @@ export const addAvailabilityBlocks = async (
     startTime: string,
     endTime: string,
     intervalMinutes: number,
-    mode: 'ONLINE' | 'OFFLINE'
+    mode: 'ONLINE' | 'OFFLINE',
+    staffId?: number
 ): Promise<AvailabilityBlock[]> => {
-    const res = await api.post('/me/availability-blocks', {
+    const res = await api.post(staffId ? `/staff/${staffId}/availability-blocks` : '/me/availability-blocks', {
         daysOfWeek, startTime, endTime, intervalMinutes, mode,
     });
     return res.data;
 };
 
-export const removeAvailabilityBlock = async (blockId: number): Promise<void> => {
-    await api.delete(`/me/availability-blocks/${blockId}`);
+export const removeAvailabilityBlock = async (blockId: number, staffId?: number): Promise<void> => {
+    await api.delete(staffId ? `/staff/${staffId}/availability-blocks/${blockId}` : `/me/availability-blocks/${blockId}`);
 };
 
 // Scoped by mode — clearing one calendar's day never touches the other.
-export const clearDayBlocks = async (dayOfWeek: string, mode: 'ONLINE' | 'OFFLINE'): Promise<void> => {
-    await api.delete(`/me/availability-blocks/day/${dayOfWeek}?mode=${mode}`);
+export const clearDayBlocks = async (dayOfWeek: string, mode: 'ONLINE' | 'OFFLINE', staffId?: number): Promise<void> => {
+    const base = staffId ? `/staff/${staffId}` : '/me';
+    await api.delete(`${base}/availability-blocks/day/${dayOfWeek}?mode=${mode}`);
 };
 
 // ── Date Overrides ───────────────────────────────────────────────────────────
@@ -96,18 +102,21 @@ export interface DateOverride {
     mode: 'ONLINE' | 'OFFLINE' | null;
 }
 
-export const getDateOverrides = async (): Promise<DateOverride[]> => {
-    const res = await api.get('/me/date-overrides');
+export const getDateOverrides = async (staffId?: number): Promise<DateOverride[]> => {
+    const res = await api.get(staffId ? `/staff/${staffId}/date-overrides` : '/me/date-overrides');
     return res.data;
 };
 
-export const addDateOverride = async (data: { specificDate: string; slotTime?: string; available: boolean; mode?: 'ONLINE' | 'OFFLINE' }): Promise<DateOverride> => {
-    const res = await api.post('/me/date-overrides', data);
+export const addDateOverride = async (
+    data: { specificDate: string; slotTime?: string; available: boolean; mode?: 'ONLINE' | 'OFFLINE' },
+    staffId?: number
+): Promise<DateOverride> => {
+    const res = await api.post(staffId ? `/staff/${staffId}/date-overrides` : '/me/date-overrides', data);
     return res.data;
 };
 
-export const removeDateOverride = async (overrideId: number): Promise<void> => {
-    await api.delete(`/me/date-overrides/${overrideId}`);
+export const removeDateOverride = async (overrideId: number, staffId?: number): Promise<void> => {
+    await api.delete(staffId ? `/staff/${staffId}/date-overrides/${overrideId}` : `/me/date-overrides/${overrideId}`);
 };
 
 // ── Profile ──────────────────────────────────────────────────────────────────

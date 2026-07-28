@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
-  Plus, Pencil, X, Loader2, Check, Clock, UserCog,
+  Plus, Pencil, X, Loader2, Check, UserCog,
   ShieldCheck, ShieldOff, RefreshCw, Brain, UserCheck,
   User, Lock, Mail, AlertCircle, CheckCircle2, LogIn, LogOut,
+  CalendarClock, DollarSign,
 } from "lucide-react";
 import { SpotlightDiv } from "../../../components/Spotlight";
 import {
@@ -13,6 +14,8 @@ import {
   deactivateStaff, reactivateStaff, getAllAttendance, getActiveStaff,
   StaffMember, AttendanceRecord, CreateStaffPayload,
 } from "../../../lib/staffApi";
+import AvailabilityEditor from "../../../components/AvailabilityEditor";
+import StaffServicesEditor from "../../../components/StaffServicesEditor";
 
 const ALL_PERMISSIONS = [
   { key: "APPOINTMENTS", label: "Appointments" },
@@ -52,7 +55,6 @@ const emptyForm = (): CreateStaffPayload => ({
 });
 
 export default function StaffPage() {
-  const [tab, setTab] = useState<"members" | "attendance">("members");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -62,6 +64,8 @@ export default function StaffPage() {
   const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [savingPermsFor, setSavingPermsFor] = useState<number | null>(null);
+  const [scheduleModalFor, setScheduleModalFor] = useState<StaffMember | null>(null);
+  const [scheduleTab, setScheduleTab] = useState<"services" | "availability">("services");
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flash = (text: string, isError = false) => {
@@ -180,94 +184,64 @@ export default function StaffPage() {
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-1)" }}>Staff Management</h1>
           <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>
-            Add practitioners and support staff, control what they can see, and track logins.
+            Add practitioners and support staff, and control what they can see.
           </p>
         </div>
-        {tab === "members" && (
-          <button onClick={openCreate} className="btn-nm-accent" style={{ padding: "12px 20px" }}>
+        <button onClick={openCreate} className="btn-nm-accent" style={{ padding: "12px 20px" }}>
+          <Plus style={{ width: 16, height: 16 }} /> Add Staff
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
+          <Loader2 style={{ width: 24, height: 24, color: "var(--accent)", animation: "spinSlow 1s linear infinite" }} />
+        </div>
+      ) : staff.length === 0 ? (
+        <div className="soft-card" style={{ padding: "80px 40px", textAlign: "center" }}>
+          <div className="icon-badge icon-badge--accent" style={{ width: 72, height: 72, borderRadius: "50%", margin: "0 auto 24px" }}>
+            <UserCog style={{ width: 32, height: 32 }} />
+          </div>
+          <p style={{ fontSize: 16, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>No staff yet</p>
+          <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 24 }}>Add your first team member to get started</p>
+          <button onClick={openCreate} className="btn-nm-accent" style={{ padding: "12px 24px" }}>
             <Plus style={{ width: 16, height: 16 }} /> Add Staff
           </button>
-        )}
-      </div>
-
-      <div className="soft-card-2" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 14, width: "fit-content" }}>
-        <button onClick={() => setTab("members")}
-          className={`tab-pill${tab === "members" ? " active" : ""}`}
-          style={{
-            padding: "9px 20px", borderRadius: 11, border: "none", cursor: "pointer",
-            fontWeight: 600, fontSize: 13,
-            background: tab === "members" ? "var(--card)" : "transparent",
-            color: tab === "members" ? "var(--text-1)" : "var(--text-3)",
-            boxShadow: tab === "members" ? "0 2px 8px var(--card-shadow-1)" : undefined,
-          }}>
-          Staff Members
-        </button>
-        <button onClick={() => setTab("attendance")}
-          className={`tab-pill${tab === "attendance" ? " active" : ""}`}
-          style={{
-            padding: "9px 20px", borderRadius: 11, border: "none", cursor: "pointer",
-            fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 8,
-            background: tab === "attendance" ? "var(--card)" : "transparent",
-            color: tab === "attendance" ? "var(--text-1)" : "var(--text-3)",
-            boxShadow: tab === "attendance" ? "0 2px 8px var(--card-shadow-1)" : undefined,
-          }}>
-          <Clock style={{ width: 14, height: 14 }} /> Attendance
-        </button>
-      </div>
-
-      {tab === "members" && (
-        loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: 60 }}>
-            <Loader2 style={{ width: 24, height: 24, color: "var(--accent)", animation: "spinSlow 1s linear infinite" }} />
-          </div>
-        ) : staff.length === 0 ? (
-          <div className="soft-card" style={{ padding: "80px 40px", textAlign: "center" }}>
-            <div className="icon-badge icon-badge--accent" style={{ width: 72, height: 72, borderRadius: "50%", margin: "0 auto 24px" }}>
-              <UserCog style={{ width: 32, height: 32 }} />
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+          {psychologists.length > 0 && (
+            <div>
+              <h2 style={{ fontSize: 12, fontWeight: 800, color: "#8075C4", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                <Brain style={{ width: 14, height: 14 }} /> Psychologists
+              </h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {psychologists.map(m => (
+                  <StaffCard key={m.id} member={m} savingPerms={savingPermsFor === m.id}
+                    onTogglePermission={key => handleTogglePermission(m, key)}
+                    onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
+                    onManageSchedule={() => { setScheduleModalFor(m); setScheduleTab("services"); }}
+                    onRefresh={fetchStaff} flash={flash} />
+                ))}
+              </div>
             </div>
-            <p style={{ fontSize: 16, fontWeight: 600, color: "var(--text-2)", marginBottom: 6 }}>No staff yet</p>
-            <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 24 }}>Add your first team member to get started</p>
-            <button onClick={openCreate} className="btn-nm-accent" style={{ padding: "12px 24px" }}>
-              <Plus style={{ width: 16, height: 16 }} /> Add Staff
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-            {psychologists.length > 0 && (
-              <div>
-                <h2 style={{ fontSize: 12, fontWeight: 800, color: "#8075C4", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                  <Brain style={{ width: 14, height: 14 }} /> Psychologists
-                </h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {psychologists.map(m => (
-                    <StaffCard key={m.id} member={m} savingPerms={savingPermsFor === m.id}
-                      onTogglePermission={key => handleTogglePermission(m, key)}
-                      onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
-                      onRefresh={fetchStaff} flash={flash} />
-                  ))}
-                </div>
+          )}
+          {others.length > 0 && (
+            <div>
+              <h2 style={{ fontSize: 12, fontWeight: 800, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                <UserCheck style={{ width: 14, height: 14 }} /> Support Staff
+              </h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {others.map(m => (
+                  <StaffCard key={m.id} member={m} savingPerms={savingPermsFor === m.id}
+                    onTogglePermission={key => handleTogglePermission(m, key)}
+                    onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
+                    onRefresh={fetchStaff} flash={flash} />
+                ))}
               </div>
-            )}
-            {others.length > 0 && (
-              <div>
-                <h2 style={{ fontSize: 12, fontWeight: 800, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                  <UserCheck style={{ width: 14, height: 14 }} /> Support Staff
-                </h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {others.map(m => (
-                    <StaffCard key={m.id} member={m} savingPerms={savingPermsFor === m.id}
-                      onTogglePermission={key => handleTogglePermission(m, key)}
-                      onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
-                      onRefresh={fetchStaff} flash={flash} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )
+            </div>
+          )}
+        </div>
       )}
-
-      {tab === "attendance" && <AttendanceTab />}
 
       {showModal && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -347,7 +321,7 @@ export default function StaffPage() {
                     {form.bookable ? "Yes — clients can book them" : "No — hidden from booking page"}
                   </button>
                   <p style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
-                    Once created, this practitioner logs in themselves to set their own bio, services, and availability.
+                    Once created, set their services, pricing & availability from their card below — they log in themselves only to update their own bio.
                   </p>
                 </div>
               )}
@@ -387,17 +361,69 @@ export default function StaffPage() {
         </div>,
         document.body
       )}
+
+      {scheduleModalFor && typeof document !== "undefined" && createPortal(
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }} onClick={() => setScheduleModalFor(null)} />
+          <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 620, maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)" }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-1)" }}>{scheduleModalFor.name}</h2>
+                <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>Services, pricing & availability</p>
+              </div>
+              <button onClick={() => setScheduleModalFor(null)} className="icon-btn" style={{ width: 34, height: 34, borderRadius: "50%" }}>
+                <X style={{ width: 14, height: 14 }} />
+              </button>
+            </div>
+
+            <div style={{ padding: "16px 24px 0" }}>
+              <div className="soft-card-2" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 14, width: "fit-content" }}>
+                <button onClick={() => setScheduleTab("services")}
+                  className={`tab-pill${scheduleTab === "services" ? " active" : ""}`}
+                  style={{
+                    padding: "8px 16px", borderRadius: 11, border: "none", cursor: "pointer",
+                    fontWeight: 600, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
+                    background: scheduleTab === "services" ? "var(--card)" : "transparent",
+                    color: scheduleTab === "services" ? "var(--text-1)" : "var(--text-3)",
+                    boxShadow: scheduleTab === "services" ? "0 2px 8px var(--card-shadow-1)" : undefined,
+                  }}>
+                  <DollarSign style={{ width: 13, height: 13 }} /> Services & Pricing
+                </button>
+                <button onClick={() => setScheduleTab("availability")}
+                  className={`tab-pill${scheduleTab === "availability" ? " active" : ""}`}
+                  style={{
+                    padding: "8px 16px", borderRadius: 11, border: "none", cursor: "pointer",
+                    fontWeight: 600, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
+                    background: scheduleTab === "availability" ? "var(--card)" : "transparent",
+                    color: scheduleTab === "availability" ? "var(--text-1)" : "var(--text-3)",
+                    boxShadow: scheduleTab === "availability" ? "0 2px 8px var(--card-shadow-1)" : undefined,
+                  }}>
+                  <CalendarClock style={{ width: 13, height: 13 }} /> Availability
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 24 }}>
+              {scheduleTab === "services"
+                ? <StaffServicesEditor staffId={scheduleModalFor.id} />
+                : <AvailabilityEditor staffId={scheduleModalFor.id} />}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 // ── Staff card ────────────────────────────────────────────────────────────
-function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onReactivate, onRefresh, flash }: {
+function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onReactivate, onManageSchedule, onRefresh, flash }: {
   member: StaffMember;
   savingPerms: boolean;
   onTogglePermission: (key: string) => void;
   onDeactivate: () => void;
   onReactivate: () => void;
+  onManageSchedule?: () => void;
   onRefresh: () => void;
   flash: (text: string, isError?: boolean) => void;
 }) {
@@ -478,6 +504,12 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
         </div>
         {!editing && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {onManageSchedule && (
+              <button onClick={onManageSchedule} className="btn-nm" style={{ padding: "6px 12px", fontSize: 11, fontWeight: 600, gap: 6 }}
+                title="Manage this practitioner's services, pricing & availability">
+                <CalendarClock style={{ width: 13, height: 13, color: "var(--accent)" }} /> Schedule & Pricing
+              </button>
+            )}
             <button onClick={openEdit} className="icon-btn" title="Edit name, role & job title">
               <Pencil style={{ width: 14, height: 14 }} />
             </button>

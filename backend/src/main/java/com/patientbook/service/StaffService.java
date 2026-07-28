@@ -163,7 +163,9 @@ public class StaffService {
         }
     }
 
-    private AppUser requireOwnedStaff(AppUser caller, Long staffId) {
+    // Public so other clinic-admin-only surfaces (StaffAvailabilityController)
+    // can reuse the exact same ownership check rather than re-implementing it.
+    public AppUser requireOwnedStaff(AppUser caller, Long staffId) {
         return appUserRepository.findByIdAndTenantId(staffId, caller.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Staff member not found: " + staffId));
     }
