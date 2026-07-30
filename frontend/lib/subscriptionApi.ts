@@ -4,13 +4,18 @@ import api from './api';
 // and payment-proof submissions. Always operates on the caller's own account.
 
 export interface SubscriptionStatus {
-    status: 'TRIALING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+    // SCHEDULED = a paid period is set up but hasn't started yet — locked
+    // today, unlocks on its own when the start date arrives.
+    status: 'TRIALING' | 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
     locked: boolean;
     plan: string;
     amount: number;
     trialStartDate: string | null;
     trialEndDate: string | null;
+    currentPeriodStart: string | null;
     currentPeriodEnd: string | null;
+    // Days until whichever deadline governs access right now: trial end while
+    // TRIALING, period start while SCHEDULED, period end while ACTIVE.
     daysRemaining: number | null;
     platformUpiId: string | null;
     platformUpiQrBase64: string | null;

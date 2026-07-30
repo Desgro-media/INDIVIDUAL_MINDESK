@@ -5,16 +5,24 @@ import api from './api';
 // account. Every call here hits /api/v1/superadmin/**, which the backend
 // restricts to ROLE_SUPERADMIN regardless of what the frontend does.
 
+// SCHEDULED = a paid window the superadmin set that hasn't begun yet: locked
+// today, becomes ACTIVE on its own once the start date arrives.
+export type SubscriptionStatus =
+    'TRIALING' | 'SCHEDULED' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'NONE';
+
 export interface TenantSummary {
     id: number;
     name: string;
     email: string;
     slug: string;
     createdAt: string;
-    subscriptionStatus: 'TRIALING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'NONE';
+    subscriptionStatus: SubscriptionStatus;
     locked: boolean;
     trialEndDate: string | null;
+    currentPeriodStart: string | null;
     currentPeriodEnd: string | null;
+    // Counts toward whichever deadline governs access right now: trial end
+    // while TRIALING, period start while SCHEDULED, period end while ACTIVE.
     daysRemaining: number | null;
     accountType: 'INDIVIDUAL' | 'CLINIC';
     staffCount: number;
@@ -58,6 +66,7 @@ export interface SuperAdminDashboardStats {
     totalTenants: number;
     activeSubscriptions: number;
     trialingSubscriptions: number;
+    scheduledSubscriptions: number;
     expiredSubscriptions: number;
     cancelledSubscriptions: number;
     totalPayments: number;
@@ -98,11 +107,26 @@ export const rejectSubmission = async (id: number, reason: string): Promise<Paym
     return res.data;
 };
 
+// Fixed-duration presets derive the end date from the start; CUSTOM requires
+// an explicit endDate. The backend recomputes all of this itself — nothing
+// here is trusted, these are just the same rules mirrored for live preview.
+export type PeriodPreset = 'ONE_MONTH' | 'SIX_MONTHS' | 'ONE_YEAR' | 'CUSTOM';
+
+export interface SubscriptionOverride {
+    action: 'ACTIVATE' | 'SUSPEND';
+    preset?: PeriodPreset;
+    /** yyyy-MM-dd. Omit to start at max(today, current period end). */
+    startDate?: string;
+    /** yyyy-MM-dd. Required when preset is CUSTOM. */
+    endDate?: string;
+    /** Legacy day-count path, only used when no preset is given. */
+    extendDays?: number;
+}
+
 export const overrideSubscription = async (
     tenantId: number,
-    action: 'ACTIVATE' | 'SUSPEND',
-    extendDays?: number
+    override: SubscriptionOverride
 ): Promise<TenantSummary> => {
-    const res = await api.post(`/superadmin/tenants/${tenantId}/subscription`, { action, extendDays });
+    const res = await api.post(`/superadmin/tenants/${tenantId}/subscription`, override);
     return res.data;
 };

@@ -5,7 +5,7 @@ import ScrollReveal from "@/components/ScrollReveal";
 import QuoteRotator from "@/components/QuoteRotator";
 import FaqAccordion from "@/components/FaqAccordion";
 import SolutionsShowcase from "@/components/SolutionsShowcase";
-import HeroSlideshow from "@/components/HeroSlideshow";
+import Testimonials from "@/components/Testimonials";
 
 export default function Home() {
   return (
@@ -185,9 +185,9 @@ export default function Home() {
             </div>
           </div>
 
-          {/* --- Big screenshot slideshow --- */}
-          <div className="px-6 md:px-10 pb-14 md:pb-20 opacity-0 animate-fade-in-up [animation-delay:450ms]">
-            <HeroSlideshow />
+          {/* --- Solutions showcase --- */}
+          <div className="opacity-0 animate-fade-in-up [animation-delay:450ms]">
+            <SolutionsShowcase />
           </div>
 
           {/* --- Feature strip --- */}
@@ -213,25 +213,49 @@ export default function Home() {
       <section id="features" className="relative z-20 pt-4 pb-20 md:pb-28 max-w-[1200px] mx-auto px-6 md:px-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {[
-            { icon: Calendar, label: "Your own booking link", desc: "Share one link — clients book straight into your calendar." },
-            { icon: ShieldCheck, label: "Private by design", desc: "Your patients, notes, and data are yours alone — never shared." },
-            { icon: CreditCard, label: "Invoicing built in", desc: "Track payments, discounts, and bank details per session." },
-            { icon: LineChart, label: "Practice analytics", desc: "See retention, revenue, and session trends at a glance." },
+            {
+              icon: Calendar, label: "Your own booking link", desc: "Share one link — clients book straight into your calendar.",
+              // Same four theme colors as the Solutions showcase and Testimonials
+              // sections below — one shared palette across the page instead of
+              // each section inventing its own.
+              bgFrom: "#F5F3FF", bgTo: "#FBFAFF", border: "#E7E0FF", accentDark: "#4B3EC2", accentBase: "#7A6CE6",
+            },
+            {
+              icon: ShieldCheck, label: "Private by design", desc: "Your patients, notes, and data are yours alone — never shared.",
+              bgFrom: "#EDFBF5", bgTo: "#F8FFFC", border: "#C9F0DE", accentDark: "#067A55", accentBase: "#00C48C",
+            },
+            {
+              icon: CreditCard, label: "Invoicing built in", desc: "Track payments, discounts, and bank details per session.",
+              bgFrom: "#FDF0F5", bgTo: "#FFF8FA", border: "#FAD7E4", accentDark: "#A61E56", accentBase: "#EA5790",
+            },
+            {
+              icon: LineChart, label: "Practice analytics", desc: "See retention, revenue, and session trends at a glance.",
+              bgFrom: "#EEF2FF", bgTo: "#F8FAFF", border: "#DCE3FF", accentDark: "#2A3FBD", accentBase: "#4F6EF7",
+            },
           ].map((f, i) => (
             <ScrollReveal key={i} delay={i * 120} animationClass="animate-fade-in-up">
-              <div className="group relative bg-white border border-[#E4E8FF] p-7 md:p-8 rounded-3xl h-full overflow-hidden transform hover:-translate-y-2 hover:border-[#4f6ef7]/30 transition-all duration-300 shadow-[0_12px_28px_rgba(80,110,200,0.07)] hover:shadow-[0_24px_56px_-12px_rgba(79,110,247,0.28)]">
-                {/* corner glow, appears on hover */}
-                <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full bg-[#4f6ef7]/15 blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+              <div
+                className="group relative p-7 md:p-8 rounded-3xl h-full overflow-hidden transform hover:-translate-y-2 transition-all duration-300 shadow-[0_12px_28px_rgba(80,110,200,0.07)]"
+                style={{
+                  background: `linear-gradient(160deg, ${f.bgFrom} 0%, ${f.bgTo} 100%)`,
+                  border: `1px solid ${f.border}`,
+                }}
+              >
+                {/* corner glow, appears on hover — tinted to this card's own theme */}
+                <div
+                  className="absolute -top-12 -right-12 w-36 h-36 rounded-full blur-3xl opacity-0 group-hover:opacity-60 transition-opacity duration-500 pointer-events-none"
+                  style={{ background: f.accentBase }}
+                />
                 {/* top specular hairline */}
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#4f6ef7]/20 to-transparent" />
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent to-transparent" style={{ backgroundImage: `linear-gradient(to right, transparent, ${f.accentBase}40, transparent)` }} />
 
                 <div className="relative flex items-start justify-between mb-6">
-                  <div className="w-12 h-12 rounded-2xl bg-[#4f6ef7]/10 border border-[#4f6ef7]/20 flex items-center justify-center group-hover:scale-110 group-hover:border-[#4f6ef7]/40 transition-all duration-300">
-                    <f.icon className="w-5 h-5 text-[#4f6ef7]" />
+                  <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center group-hover:scale-110 transition-all duration-300">
+                    <f.icon className="w-5 h-5" style={{ color: f.accentBase }} />
                   </div>
-                  <span className="text-[#B8BEEF] text-[11px] font-bold tabular-nums pt-1">0{i + 1}</span>
+                  <span className="text-[11px] font-bold tabular-nums pt-1" style={{ color: f.accentBase, opacity: 0.55 }}>0{i + 1}</span>
                 </div>
-                <div className="relative text-[#1b2048] font-semibold text-[15px] mb-1.5">{f.label}</div>
+                <div className="relative font-semibold text-[15px] mb-1.5" style={{ color: f.accentDark }}>{f.label}</div>
                 <div className="relative text-[#4a5282] text-sm leading-relaxed">{f.desc}</div>
               </div>
             </ScrollReveal>
@@ -239,7 +263,7 @@ export default function Home() {
         </div>
       </section>
 
-      <SolutionsShowcase />
+      <Testimonials />
 
       {/* --- Pricing --- */}
       <section id="pricing" className="relative z-20 py-20 md:py-28 max-w-[1000px] mx-auto px-6 md:px-12">

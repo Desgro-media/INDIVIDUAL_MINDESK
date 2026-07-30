@@ -20,7 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -42,6 +44,12 @@ public class SuperAdminService {
     private final NotificationService notificationService;
 
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd MMM yyyy");
+    private static final DateTimeFormatter AUDIT_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    // Sanity bounds on manual date entry — wide enough never to block a real
+    // billing arrangement, tight enough to catch a mistyped year.
+    private static final int MAX_SCHEDULE_AHEAD_YEARS = 5;
+    private static final int MAX_PERIOD_YEARS = 10;
 
     public List<TenantSummaryDto> listTenants() {
         // tenantId IS NULL excludes clinic staff-doctors, who share the
@@ -72,15 +80,20 @@ public class SuperAdminService {
         List<TenantSummaryDto> tenants = listTenants();
 
         int totalClinics = 0, totalIndividuals = 0;
-        int active = 0, trialing = 0, expired = 0, cancelled = 0;
+        int active = 0, trialing = 0, scheduled = 0, expired = 0, cancelled = 0;
         for (TenantSummaryDto t : tenants) {
             if ("CLINIC".equals(t.getAccountType())) totalClinics++; else totalIndividuals++;
             switch (t.getSubscriptionStatus()) {
-                case "ACTIVE": active++; break;
-                case "TRIALING": trialing++; break;
-                case "EXPIRED": expired++; break;
-                case "CANCELLED": cancelled++; break;
-                default: break; // "NONE" — no subscription row yet, shouldn't happen post-signup
+                case SubscriptionService.ACTIVE: active++; break;
+                case SubscriptionService.TRIALING: trialing++; break;
+                case SubscriptionService.SCHEDULED: scheduled++; break;
+                case SubscriptionService.EXPIRED: expired++; break;
+                case SubscriptionService.CANCELLED: cancelled++; break;
+                // Anything unrecognised is counted as expired rather than
+                // dropped: these five buckets are rendered as a breakdown of
+                // totalTenants, so silently skipping a row would make the
+                // segments stop summing to the total with no visible cause.
+                default: expired++; break;
             }
         }
 
@@ -99,6 +112,7 @@ public class SuperAdminService {
                 .totalTenants(tenants.size())
                 .activeSubscriptions(active)
                 .trialingSubscriptions(trialing)
+                .scheduledSubscriptions(scheduled)
                 .expiredSubscriptions(expired)
                 .cancelledSubscriptions(cancelled)
                 .totalPayments((int) (successful + pendingCount + failed))
@@ -124,9 +138,12 @@ public class SuperAdminService {
                 .orElseGet(() -> Subscription.builder().psychologistId(tenant.getId()).status("EXPIRED").build());
 
         LocalDateTime now = LocalDateTime.now();
+        // Renewals queue after any time already paid for rather than resetting
+        // to today, so approving early never costs the tenant remaining days.
         LocalDateTime extendFrom = (sub.getCurrentPeriodEnd() != null && sub.getCurrentPeriodEnd().isAfter(now))
                 ? sub.getCurrentPeriodEnd() : now;
-        sub.setStatus("ACTIVE");
+        sub.setStatus(SubscriptionService.ACTIVE);
+        sub.setCurrentPeriodStart(extendFrom);
         sub.setCurrentPeriodEnd(extendFrom.plusYears(1));
         subscriptionRepository.save(sub);
 
@@ -173,20 +190,114 @@ public class SuperAdminService {
         Subscription sub = subscriptionRepository.findByPsychologistId(tenantId)
                 .orElseGet(() -> Subscription.builder().psychologistId(tenantId).status("EXPIRED").build());
 
+        String detail;
         if ("SUSPEND".equals(request.getAction())) {
-            sub.setStatus("CANCELLED");
+            // Dates are deliberately left untouched — suspension is a hold, not
+            // a deletion, so reactivating restores the original window instead
+            // of forcing the admin to retype dates they never changed.
+            sub.setStatus(SubscriptionService.CANCELLED);
+            detail = "suspended; window preserved " + describeWindow(sub);
         } else { // ACTIVATE
-            LocalDateTime now = LocalDateTime.now();
-            int days = request.getExtendDays() != null ? request.getExtendDays() : 365;
-            LocalDateTime extendFrom = (sub.getCurrentPeriodEnd() != null && sub.getCurrentPeriodEnd().isAfter(now))
-                    ? sub.getCurrentPeriodEnd() : now;
-            sub.setStatus("ACTIVE");
-            sub.setCurrentPeriodEnd(extendFrom.plusDays(days));
+            LocalDateTime before = sub.getCurrentPeriodEnd();
+            Window window = resolveWindow(sub, request);
+            sub.setCurrentPeriodStart(window.start());
+            sub.setCurrentPeriodEnd(window.end());
+            // Clears any prior CANCELLED hold. resolve() decides ACTIVE vs
+            // SCHEDULED from the dates on the very next read, so writing ACTIVE
+            // here is just a starting point, never the final word.
+            sub.setStatus(SubscriptionService.ACTIVE);
+            detail = "preset=" + (request.getPreset() != null ? request.getPreset() : "LEGACY")
+                    + " window=" + describeWindow(sub)
+                    + " previousEnd=" + (before != null ? before.format(AUDIT_DATE) : "none");
         }
         subscriptionRepository.save(sub);
-        audit(adminId, "MANUAL_OVERRIDE_" + request.getAction(), tenantId, "extendDays=" + request.getExtendDays());
+        audit(adminId, "MANUAL_OVERRIDE_" + request.getAction(), tenantId, detail);
 
         return toSummary(tenant);
+    }
+
+    // A resolved paid window, already normalized to its time-of-day bounds.
+    private record Window(LocalDateTime start, LocalDateTime end) {}
+
+    // Turns the admin's date-only intent into a concrete [start, end) window.
+    //
+    // Start defaults to max(today, currentPeriodEnd) rather than today: that's
+    // what makes "give them another year" queue after time the tenant has
+    // already paid for instead of silently swallowing it. An explicit startDate
+    // always wins, which is how backdating and future-scheduling are expressed.
+    //
+    // Boundaries are inclusive-by-day: start at 00:00:00 of its date, end at
+    // 23:59:59.999999999 of its date. An admin who types "31 Aug" as the end
+    // means "through the 31st", so the tenant keeps access all that day —
+    // normalizing to start-of-day here would cut them off a full day early.
+    private Window resolveWindow(Subscription sub, SubscriptionOverrideRequest request) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime defaultStart = (sub.getCurrentPeriodEnd() != null && sub.getCurrentPeriodEnd().isAfter(now))
+                ? sub.getCurrentPeriodEnd() : now;
+
+        LocalDateTime start = request.getStartDate() != null
+                ? request.getStartDate().atStartOfDay()
+                : defaultStart;
+
+        String preset = request.getPreset();
+        LocalDateTime end;
+        if ("CUSTOM".equals(preset)) {
+            if (request.getEndDate() == null) {
+                throw new IllegalArgumentException("An end date is required for a custom period");
+            }
+            end = endOfDay(request.getEndDate());
+        } else if (preset != null) {
+            // Calendar-aware arithmetic, not a fixed day count: "1 month" from
+            // 31 Jan is 28/29 Feb, and "1 year" spans a leap day correctly.
+            // plusMonths/plusYears clamp to the last valid day of the target
+            // month on their own, so no month-length special-casing is needed.
+            LocalDateTime base = start;
+            end = switch (preset) {
+                case "ONE_MONTH" -> base.plusMonths(1);
+                case "SIX_MONTHS" -> base.plusMonths(6);
+                default -> base.plusYears(1); // ONE_YEAR
+            };
+        } else {
+            // Legacy path: {action, extendDays} with no preset. Preserved so an
+            // older client (or a stored integration) keeps behaving exactly as
+            // it did before date-editing shipped.
+            int days = request.getExtendDays() != null ? request.getExtendDays() : 365;
+            end = start.plusDays(days);
+        }
+
+        if (!end.isAfter(start)) {
+            throw new IllegalArgumentException("The end date must be after the start date");
+        }
+        // Guards against a mistyped year (2206 instead of 2026) handing out a
+        // two-century subscription that nobody would notice until renewal.
+        if (start.isAfter(now.plusYears(MAX_SCHEDULE_AHEAD_YEARS))) {
+            throw new IllegalArgumentException("A period can't start more than "
+                    + MAX_SCHEDULE_AHEAD_YEARS + " years from now — check the start date");
+        }
+        if (end.isAfter(start.plusYears(MAX_PERIOD_YEARS))) {
+            throw new IllegalArgumentException("A period can't be longer than "
+                    + MAX_PERIOD_YEARS + " years — check the end date");
+        }
+        return new Window(start, end);
+    }
+
+    // The last instant of the given day, so the whole day counts as inside the
+    // window (see resolveWindow).
+    //
+    // Deliberately NOT LocalTime.MAX (23:59:59.999999999): the column is
+    // timestamp(6), and Postgres rounds those nanoseconds up to the next
+    // microsecond — storing 00:00:00 of the FOLLOWING day and silently
+    // reintroducing the off-by-one this method exists to prevent. Verified
+    // against the live DB, not theoretical. Microsecond precision is the
+    // most this column can hold, so stop exactly there.
+    private static LocalDateTime endOfDay(LocalDate date) {
+        return date.atTime(LocalTime.of(23, 59, 59, 999_999_000));
+    }
+
+    private static String describeWindow(Subscription sub) {
+        String start = sub.getCurrentPeriodStart() != null ? sub.getCurrentPeriodStart().format(AUDIT_DATE) : "open";
+        String end = sub.getCurrentPeriodEnd() != null ? sub.getCurrentPeriodEnd().format(AUDIT_DATE) : "open";
+        return start + ".." + end;
     }
 
     private void audit(Long adminId, String action, Long targetPsychologistId, String detail) {

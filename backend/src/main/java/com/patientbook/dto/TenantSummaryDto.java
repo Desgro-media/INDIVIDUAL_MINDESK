@@ -17,10 +17,16 @@ public class TenantSummaryDto {
     private String email;
     private String slug;
     private LocalDateTime createdAt;
+    // TRIALING | SCHEDULED | ACTIVE | EXPIRED | CANCELLED — always the live
+    // resolved status (SubscriptionService.resolve), never the raw stored one.
     private String subscriptionStatus;
     private boolean locked;
     private LocalDateTime trialEndDate;
+    private LocalDateTime currentPeriodStart;
     private LocalDateTime currentPeriodEnd;
+
+    // Counts toward whichever deadline currently governs access: trial end
+    // while TRIALING, period start while SCHEDULED, period end while ACTIVE.
     private Integer daysRemaining;
 
     // "INDIVIDUAL" or "CLINIC" — lets the superadmin tenant list visually
