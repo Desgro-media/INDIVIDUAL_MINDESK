@@ -14,6 +14,10 @@ import { SpotlightDiv } from "../../../components/Spotlight";
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; label: string }> = {
   TRIALING:  { color: "var(--accent)",  bg: "var(--accent-surface)", label: "Free Trial" },
+  // A billing period has been set up but hasn't begun — locked for now, and it
+  // unlocks on its own at the start date. Deliberately not styled as an error:
+  // nothing is wrong and there's nothing for the practitioner to fix.
+  SCHEDULED: { color: "var(--warning)", bg: "var(--warning-bg)",     label: "Starts Soon" },
   ACTIVE:    { color: "var(--success)", bg: "var(--success-bg)",     label: "Active" },
   EXPIRED:   { color: "var(--danger)",  bg: "rgba(239,68,68,0.10)",  label: "Expired" },
   CANCELLED: { color: "var(--text-3)",  bg: "var(--sd)",             label: "Suspended" },
@@ -27,10 +31,12 @@ const SUBMISSION_STYLE: Record<string, { color: string; bg: string; icon: React.
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  // Backend LocalDateTime values are serialized without a timezone but are
-  // UTC wall-clock time — append "Z" so this parses the same way staff
-  // attendance timestamps do, instead of being misread as local time.
-  return new Date(iso + "Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  // Parsed as LOCAL time, deliberately. The backend JVM is pinned to
+  // Asia/Kolkata (see backend/Dockerfile), so a serialized LocalDateTime is
+  // already IST wall-clock — appending "Z" would re-read it as UTC and shift
+  // it forward 5h30m. That misdates any period boundary: a period ending
+  // 23:59:59 on 31 Aug would render as 1 Sep, a full day late.
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function fmtMoney(n: number | null | undefined): string {
@@ -94,7 +100,13 @@ export default function SubscriptionPage() {
   }
 
   const st = STATUS_STYLE[status.status] || STATUS_STYLE.EXPIRED;
-  const deadline = status.status === "TRIALING" ? status.trialEndDate : status.currentPeriodEnd;
+  const isScheduled = status.status === "SCHEDULED";
+  // Always the date the current status is actually counting toward, so the
+  // tile's number and its label can't describe two different things.
+  const deadline =
+    status.status === "TRIALING" ? status.trialEndDate :
+    isScheduled ? status.currentPeriodStart :
+    status.currentPeriodEnd;
 
   return (
     <div className="anim-fade-up" style={{ display: "flex", flexDirection: "column", gap: 28 }}>
@@ -106,18 +118,30 @@ export default function SubscriptionPage() {
         <p style={{ fontSize: 14, color: "var(--text-3)" }}>Manage your Mindesk plan and payment verification</p>
       </div>
 
+      {/* A scheduled period is locked too, but nothing is wrong and there's
+          nothing to pay — telling that practitioner their subscription "has
+          ended" and to submit a payment would be flatly untrue, so it gets its
+          own non-alarming message. */}
       {status.locked && (
         <div style={{
           display: "flex", alignItems: "center", gap: 14,
           padding: "16px 22px", borderRadius: 18,
-          background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
+          background: isScheduled ? "var(--warning-bg)" : "rgba(239,68,68,0.08)",
+          border: `1px solid ${isScheduled ? "var(--warning)" : "rgba(239,68,68,0.25)"}`,
         }}>
-          <Lock style={{ width: 20, height: 20, color: "var(--danger)", flexShrink: 0 }} />
+          <Lock style={{ width: 20, height: 20, color: isScheduled ? "var(--warning)" : "var(--danger)", flexShrink: 0 }} />
           <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>Your dashboard is locked</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: isScheduled ? "var(--warning)" : "var(--danger)" }}>
+              {isScheduled ? "Your subscription hasn't started yet" : "Your dashboard is locked"}
+            </p>
             <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
-              Your trial/subscription has ended. Pay via GPay/UPI below and submit your transaction reference —
-              your dashboard and your public booking page both unlock as soon as it's verified. New patients can't book with you until then.
+              {isScheduled ? (
+                <>Your plan is set up and starts on <strong>{fmtDate(status.currentPeriodStart)}</strong>. Your dashboard
+                  and public booking page unlock automatically then — no payment or action is needed from you.</>
+              ) : (
+                <>Your trial/subscription has ended. Pay via GPay/UPI below and submit your transaction reference —
+                  your dashboard and your public booking page both unlock as soon as it's verified. New patients can't book with you until then.</>
+              )}
             </p>
           </div>
         </div>
@@ -136,7 +160,9 @@ export default function SubscriptionPage() {
           <div className="icon-badge icon-badge--accent" style={{ marginBottom: 16 }}>
             <Clock />
           </div>
-          <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Days Remaining</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            {isScheduled ? "Days Until Start" : "Days Remaining"}
+          </p>
           <p style={{ fontSize: 22, fontWeight: 800, color: "var(--text-1)", lineHeight: 1 }}>
             {status.daysRemaining != null ? status.daysRemaining : "—"}
           </p>
@@ -147,7 +173,7 @@ export default function SubscriptionPage() {
             <CalendarClock />
           </div>
           <p style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-            {status.status === "TRIALING" ? "Trial Ends" : "Renews On"}
+            {status.status === "TRIALING" ? "Trial Ends" : isScheduled ? "Starts On" : "Renews On"}
           </p>
           <p style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)", lineHeight: 1.2 }}>{fmtDate(deadline)}</p>
         </SpotlightDiv>

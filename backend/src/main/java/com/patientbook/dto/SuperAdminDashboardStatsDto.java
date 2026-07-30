@@ -24,8 +24,12 @@ public class SuperAdminDashboardStatsDto {
     private int totalIndividuals;
     private int totalTenants;
 
+    // These five are rendered as a breakdown of totalTenants and always sum to
+    // it — SuperAdminService buckets an unrecognised status as expired rather
+    // than dropping it, so the segments can't silently stop adding up.
     private int activeSubscriptions;
     private int trialingSubscriptions;
+    private int scheduledSubscriptions; // paid window set, hasn't begun yet
     private int expiredSubscriptions;
     private int cancelledSubscriptions;
 

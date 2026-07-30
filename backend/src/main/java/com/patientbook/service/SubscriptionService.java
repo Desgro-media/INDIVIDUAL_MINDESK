@@ -42,22 +42,35 @@ public class SubscriptionService {
 
     @Transactional
     public boolean isAccessAllowed(Long psychologistId) {
-        return evaluateAndSync(loadOrFailClosed(psychologistId));
+        return evaluateAndSync(loadOrFailClosed(psychologistId)).allowed();
     }
+
+    // Status strings. SCHEDULED is the one that didn't exist before superadmin
+    // date-editing: a paid window that has been set but hasn't begun yet.
+    public static final String TRIALING  = "TRIALING";
+    public static final String SCHEDULED = "SCHEDULED";
+    public static final String ACTIVE    = "ACTIVE";
+    public static final String EXPIRED   = "EXPIRED";
+    public static final String CANCELLED = "CANCELLED";
+
+    // What the stored row actually means right now. Kept as a value so callers
+    // can't accidentally use one half without the other.
+    public record Resolution(String status, boolean allowed) {}
 
     @Transactional
     public SubscriptionStatusDto getStatus(Long psychologistId) {
         Subscription sub = loadOrFailClosed(psychologistId);
-        boolean allowed = evaluateAndSync(sub);
+        Resolution res = evaluateAndSync(sub);
         return SubscriptionStatusDto.builder()
-                .status(sub.getStatus())
-                .locked(!allowed)
+                .status(res.status())
+                .locked(!res.allowed())
                 .plan(sub.getPlan())
                 .amount(sub.getAmount())
                 .trialStartDate(sub.getTrialStartDate())
                 .trialEndDate(sub.getTrialEndDate())
+                .currentPeriodStart(sub.getCurrentPeriodStart())
                 .currentPeriodEnd(sub.getCurrentPeriodEnd())
-                .daysRemaining(daysRemaining(sub))
+                .daysRemaining(daysRemaining(sub, res.status()))
                 .platformUpiId(platformUpiId)
                 .platformUpiQrBase64(platformUpiQrBase64)
                 .build();
@@ -102,32 +115,96 @@ public class SubscriptionService {
                         .build()));
     }
 
-    // Applies the TRIALING/ACTIVE/EXPIRED/CANCELLED state machine, lazily
-    // persisting an EXPIRED flip the first time a lapsed date is observed
-    // (same "check on read, correct if stale" idiom as SettingsService's
-    // get-or-create). Returns whether access is currently allowed.
-    private boolean evaluateAndSync(Subscription sub) {
-        LocalDateTime now = LocalDateTime.now();
-        boolean allowed;
-        switch (sub.getStatus()) {
-            case "ACTIVE":
-                allowed = sub.getCurrentPeriodEnd() == null || sub.getCurrentPeriodEnd().isAfter(now);
-                break;
-            case "TRIALING":
-                allowed = sub.getTrialEndDate() != null && sub.getTrialEndDate().isAfter(now);
-                break;
-            default: // EXPIRED, CANCELLED
-                allowed = false;
-        }
-        if (!allowed && !"EXPIRED".equals(sub.getStatus()) && !"CANCELLED".equals(sub.getStatus())) {
-            sub.setStatus("EXPIRED");
+    // Resolves a stored row into what it means right now, then lazily persists
+    // the corrected status (same "check on read, correct if stale" idiom as
+    // SettingsService's get-or-create). Every consumer — the access filter,
+    // the practitioner's own status page, and the superadmin tenant list —
+    // goes through here, so enforcement and display can never disagree.
+    private Resolution evaluateAndSync(Subscription sub) {
+        Resolution res = resolve(sub, LocalDateTime.now());
+        if (!res.status().equals(sub.getStatus())) {
+            sub.setStatus(res.status());
             subscriptionRepository.save(sub);
         }
-        return allowed;
+        return res;
     }
 
-    private Integer daysRemaining(Subscription sub) {
-        LocalDateTime deadline = "TRIALING".equals(sub.getStatus()) ? sub.getTrialEndDate() : sub.getCurrentPeriodEnd();
+    // The single authority on "what is this subscription right now". Pure: no
+    // I/O, no clock read — `now` is passed in so this is trivially testable and
+    // so one request can't observe two different clocks mid-evaluation.
+    //
+    // Access is the UNION of the trial window and the paid window, deliberately
+    // not a single-status check. That union is what makes it safe for an admin
+    // to queue a future paid period for someone who is still mid-trial: the
+    // queued period doesn't cut the trial short, it just takes over when the
+    // trial lapses.
+    //
+    // Precedence — paid, then trial, then not-yet-started, then lapsed:
+    //   CANCELLED       explicit admin suspension; sticky, never auto-recovers
+    //   ACTIVE          now is inside the paid window (or it's grandfathered)
+    //   TRIALING        now is inside the trial window
+    //   SCHEDULED       a paid window exists but hasn't begun yet
+    //   EXPIRED         everything else
+    //
+    // SCHEDULED is denied access but is NOT a lapse — it must never be rewritten
+    // to EXPIRED, or the first page load after an admin schedules a future
+    // period would silently erase that period.
+    public static Resolution resolve(Subscription sub, LocalDateTime now) {
+        // Sticky: a suspended account stays suspended until an admin explicitly
+        // reactivates it, even if its dates would otherwise still be valid.
+        if (CANCELLED.equals(sub.getStatus())) {
+            return new Resolution(CANCELLED, false);
+        }
+
+        LocalDateTime periodStart = sub.getCurrentPeriodStart();
+        LocalDateTime periodEnd = sub.getCurrentPeriodEnd();
+        // A row with neither bound has no paid period at all — distinct from a
+        // grandfathered one, which is ACTIVE with an open end (see below).
+        boolean hasPaidPeriod = periodStart != null || periodEnd != null;
+
+        // Grandfathered pre-launch accounts: ACTIVE, no bounds, never expire.
+        // Checked before anything else so their behavior is untouched forever.
+        if (!hasPaidPeriod && ACTIVE.equals(sub.getStatus())) {
+            return new Resolution(ACTIVE, true);
+        }
+
+        // null start = no start gate (every row written before date-editing
+        // shipped); null end = no forced expiry.
+        boolean paidStarted = periodStart == null || !now.isBefore(periodStart);
+        boolean paidNotEnded = periodEnd == null || now.isBefore(periodEnd);
+        if (hasPaidPeriod && paidStarted && paidNotEnded) {
+            return new Resolution(ACTIVE, true);
+        }
+
+        if (inTrialWindow(sub, now)) {
+            return new Resolution(TRIALING, true);
+        }
+
+        // Paid window set but still in the future. Denied now, but preserved —
+        // it will resolve to ACTIVE on its own once `now` reaches the start.
+        if (hasPaidPeriod && !paidStarted) {
+            return new Resolution(SCHEDULED, false);
+        }
+
+        return new Resolution(EXPIRED, false);
+    }
+
+    private static boolean inTrialWindow(Subscription sub, LocalDateTime now) {
+        if (sub.getTrialEndDate() == null || !now.isBefore(sub.getTrialEndDate())) return false;
+        return sub.getTrialStartDate() == null || !now.isBefore(sub.getTrialStartDate());
+    }
+
+    // Counts toward whichever deadline is actually governing access, so this
+    // never reports time left against a window that isn't the live one:
+    //   TRIALING  -> trial end        SCHEDULED -> days until the period starts
+    //   ACTIVE    -> period end       lapsed    -> null
+    private Integer daysRemaining(Subscription sub, String resolvedStatus) {
+        LocalDateTime deadline = switch (resolvedStatus) {
+            case TRIALING -> sub.getTrialEndDate();
+            case SCHEDULED -> sub.getCurrentPeriodStart();
+            case ACTIVE -> sub.getCurrentPeriodEnd();
+            default -> null;
+        };
         if (deadline == null) return null;
         long days = ChronoUnit.DAYS.between(LocalDateTime.now(), deadline);
         return (int) Math.max(0, days);

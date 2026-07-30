@@ -5,9 +5,9 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   ShieldCheck, LogOut, Users, CheckCircle2, XCircle,
-  X, Search, Ban, PlayCircle, Building2, User,
+  X, Search, Ban, Building2, User,
   IndianRupee, ListChecks, Clock, History,
-  LayoutDashboard, Repeat, Receipt, ArrowUpRight,
+  LayoutDashboard, Repeat, Receipt, ArrowUpRight, CalendarCog,
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../../../lib/api";
@@ -18,16 +18,56 @@ import { useCountUp } from "../../../lib/chartTheme";
 import {
   listTenants, listPendingSubmissions, approveSubmission, rejectSubmission, overrideSubscription,
   getDashboardStats,
-  TenantSummary, PaymentSubmissionReview, SuperAdminDashboardStats,
+  TenantSummary, PaymentSubmissionReview, SuperAdminDashboardStats, PeriodPreset,
 } from "../../../lib/superAdminApi";
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; label: string }> = {
   TRIALING:  { color: "var(--accent)",  bg: "var(--accent-surface)", label: "Trial" },
+  // Distinct from both Active and Expired on purpose: a scheduled tenant is
+  // locked right now but nothing is wrong — it unlocks itself on the start date.
+  SCHEDULED: { color: "var(--warning)", bg: "var(--warning-bg)",     label: "Scheduled" },
   ACTIVE:    { color: "var(--success)", bg: "var(--success-bg)",     label: "Active" },
   EXPIRED:   { color: "var(--danger)",  bg: "rgba(239,68,68,0.10)",  label: "Expired" },
   CANCELLED: { color: "var(--text-3)",  bg: "var(--sd)",             label: "Suspended" },
   NONE:      { color: "var(--text-3)",  bg: "var(--sd)",             label: "None" },
 };
+
+// Fixed-duration presets mirror the backend's own arithmetic
+// (SuperAdminService.resolveWindow) purely so the modal can preview the end
+// date before submitting. The server always recomputes — nothing sent from
+// here is trusted as the final window.
+const PERIOD_PRESETS: { key: PeriodPreset; label: string; months?: number }[] = [
+  { key: "ONE_MONTH",  label: "1 month",  months: 1 },
+  { key: "SIX_MONTHS", label: "6 months", months: 6 },
+  { key: "ONE_YEAR",   label: "1 year",   months: 12 },
+  { key: "CUSTOM",     label: "Custom" },
+];
+
+// yyyy-MM-dd in LOCAL time. Never toISOString() — that converts to UTC first
+// and rolls the date back a day for any IST time before 05:30.
+function toDateInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Parses a yyyy-MM-dd input as a LOCAL date. `new Date("2026-08-31")` parses
+// as UTC midnight and can render as the 30th in IST — this avoids that.
+function fromDateInput(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Calendar-aware month addition matching Java's plusMonths: clamps to the last
+// day of the target month, so 31 Jan + 1 month is 28/29 Feb, not 2/3 Mar the
+// way naive setMonth() overflow would give.
+function addMonthsClamped(date: Date, months: number): Date {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(date.getDate(), lastDay));
+  return target;
+}
 
 // PaymentSubmission.status (PENDING/APPROVED/REJECTED) rendered with the
 // Successful/Pending/Failed labels the superadmin update asked for — same
@@ -61,6 +101,149 @@ function AccountTypeBadge({ accountType, staffCount }: { accountType: 'INDIVIDUA
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Editor for a tenant's billing window. Presets are duration shortcuts that
+// compute an end from the chosen start — everything the admin does resolves to
+// one explicit (start, end) pair, which is exactly what the backend stores, so
+// there's no second "extend vs replace" mental model to keep straight.
+function PeriodEditor({
+  tenant, busy, onClose, onSave,
+}: {
+  tenant: TenantSummary;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (preset: PeriodPreset, startDate: string, endDate: string) => void;
+}) {
+  const today = useMemo(() => new Date(), []);
+
+  // Default start mirrors the backend: queue after any period the tenant has
+  // already paid for, so "another year" never eats their remaining days.
+  const defaultStart = useMemo(() => {
+    const end = tenant.currentPeriodEnd ? new Date(tenant.currentPeriodEnd) : null;
+    return end && end > today ? end : today;
+  }, [tenant.currentPeriodEnd, today]);
+
+  const [preset, setPreset] = useState<PeriodPreset>("ONE_YEAR");
+  const [startDate, setStartDate] = useState(() => toDateInput(defaultStart));
+  const [endDate, setEndDate] = useState("");
+
+  const startObj = fromDateInput(startDate);
+
+  // For a fixed-duration preset the end is derived, so the date input is shown
+  // read-only rather than hidden — the admin still sees exactly what they're
+  // about to commit to.
+  const derivedEnd = useMemo(() => {
+    if (preset === "CUSTOM" || !startObj) return null;
+    const months = PERIOD_PRESETS.find(p => p.key === preset)?.months ?? 12;
+    return addMonthsClamped(startObj, months);
+  }, [preset, startObj]);
+
+  const effectiveEnd = preset === "CUSTOM" ? fromDateInput(endDate) : derivedEnd;
+
+  // Mirrors the server's own guards so an invalid window is caught before a
+  // round trip; the backend re-validates regardless.
+  const error = useMemo(() => {
+    if (!startObj) return "Enter a valid start date";
+    if (preset === "CUSTOM" && !endDate) return "Choose an end date";
+    if (!effectiveEnd) return "Enter a valid end date";
+    if (effectiveEnd <= startObj) return "The end date must be after the start date";
+    return null;
+  }, [startObj, effectiveEnd, preset, endDate]);
+
+  // A start in the future means the tenant stays locked until it arrives. That
+  // may well be intended (queueing next year's period), but it's the single
+  // easiest thing to do by accident here, so it's called out explicitly.
+  const startsInFuture = !!startObj && startObj > today;
+  const gapWarning = startsInFuture && !tenant.locked;
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
+      <div className="soft-card anim-scale-in" style={{ position: "relative", padding: 28, width: 460, maxWidth: "92vw", maxHeight: "90vh", overflowY: "auto" }}>
+        <button onClick={onClose} className="icon-btn" style={{ position: "absolute", top: 14, right: 14 }}>
+          <X style={{ width: 18, height: 18 }} />
+        </button>
+
+        <h3 style={{ fontSize: 16, fontWeight: 800, color: "var(--text-1)", marginBottom: 4 }}>Set Billing Period</h3>
+        <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 18 }}>{tenant.name} — {tenant.email}</p>
+
+        {/* What's there now, so the admin is never overwriting blind */}
+        <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--sd)", marginBottom: 18, fontSize: 12, color: "var(--text-2)" }}>
+          <strong style={{ color: "var(--text-1)" }}>Current:</strong>{" "}
+          {STATUS_STYLE[tenant.subscriptionStatus]?.label ?? tenant.subscriptionStatus}
+          {tenant.currentPeriodStart || tenant.currentPeriodEnd ? (
+            <> · {fmtDate(tenant.currentPeriodStart)} → {fmtDate(tenant.currentPeriodEnd)}</>
+          ) : tenant.subscriptionStatus === "TRIALING" ? (
+            <> · trial ends {fmtDate(tenant.trialEndDate)}</>
+          ) : (
+            <> · no billing period set</>
+          )}
+        </div>
+
+        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+          Duration
+        </label>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+          {PERIOD_PRESETS.map(p => (
+            <button key={p.key} onClick={() => setPreset(p.key)}
+              className={`tab-pill${preset === p.key ? " active" : " nm-raised-sm"}`}
+              style={{ padding: "8px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 12,
+                background: preset === p.key ? "var(--accent)" : "transparent",
+                color: preset === p.key ? "#fff" : "var(--text-2)" }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              Starts
+            </label>
+            <input type="date" className="nm-input no-icon" value={startDate}
+              onChange={e => setStartDate(e.target.value)} style={{ width: "100%" }} />
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              Ends {preset !== "CUSTOM" && <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>(auto)</span>}
+            </label>
+            <input type="date" className="nm-input no-icon"
+              value={preset === "CUSTOM" ? endDate : (derivedEnd ? toDateInput(derivedEnd) : "")}
+              readOnly={preset !== "CUSTOM"}
+              min={startDate}
+              onChange={e => setEndDate(e.target.value)}
+              style={{ width: "100%", opacity: preset === "CUSTOM" ? 1 : 0.65,
+                cursor: preset === "CUSTOM" ? "auto" : "not-allowed" }} />
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 14, lineHeight: 1.5 }}>
+          Access runs from the start of <strong style={{ color: "var(--text-2)" }}>{startObj ? fmtDate(startObj.toISOString()) : "—"}</strong>{" "}
+          through the end of <strong style={{ color: "var(--text-2)" }}>{effectiveEnd ? fmtDate(effectiveEnd.toISOString()) : "—"}</strong>, inclusive.
+        </p>
+
+        {gapWarning && (
+          <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--warning-bg)", marginBottom: 14, fontSize: 12, color: "var(--warning)", lineHeight: 1.5 }}>
+            This starts in the future, so <strong>{tenant.name}</strong> will be locked out until then. Set the start to today to grant access immediately.
+          </div>
+        )}
+
+        {error && (
+          <p style={{ fontSize: 12, color: "var(--danger)", marginBottom: 14 }}>{error}</p>
+        )}
+
+        <button
+          onClick={() => !error && effectiveEnd && startObj && onSave(preset, toDateInput(startObj), toDateInput(effectiveEnd))}
+          disabled={busy || !!error}
+          className="btn-nm-accent"
+          style={{ width: "100%", padding: 12, opacity: busy || error ? 0.55 : 1 }}>
+          {busy ? "Saving..." : "Save Billing Period"}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 function fmtMoney(n: number | null | undefined): string {
@@ -227,6 +410,7 @@ export default function SuperAdminDashboardPage() {
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>("ALL");
   const [rejectTarget, setRejectTarget] = useState<PaymentSubmissionReview | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [periodTarget, setPeriodTarget] = useState<TenantSummary | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [barsIn, setBarsIn] = useState(false);
 
@@ -296,15 +480,41 @@ export default function SuperAdminDashboardPage() {
     }
   };
 
-  const handleOverride = async (tenantId: number, action: "ACTIVATE" | "SUSPEND") => {
-    if (!confirm(`${action === "ACTIVATE" ? "Activate" : "Suspend"} this tenant's subscription?`)) return;
+  // Suspension deliberately doesn't touch the stored dates — it's a hold, so
+  // reactivating later restores the same window instead of losing it.
+  const handleSuspend = async (tenantId: number) => {
+    if (!confirm("Suspend this tenant's access? Their billing dates are kept, so you can restore them later.")) return;
     setBusyId(tenantId);
     try {
-      await overrideSubscription(tenantId, action, action === "ACTIVATE" ? 365 : undefined);
-      toast.success(action === "ACTIVATE" ? "Activated" : "Suspended");
+      await overrideSubscription(tenantId, { action: "SUSPEND" });
+      toast.success("Suspended");
       fetchData();
     } catch (e: any) {
       toast.error(e?.response?.data?.message || "Failed to update");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSavePeriod = async (preset: PeriodPreset, startDate: string, endDate: string) => {
+    if (!periodTarget) return;
+    setBusyId(periodTarget.id);
+    try {
+      // endDate is sent for every preset, not just CUSTOM — the backend
+      // ignores it for fixed durations and recomputes, so what the admin saw
+      // previewed and what gets stored can't silently diverge.
+      const updated = await overrideSubscription(periodTarget.id, {
+        action: "ACTIVATE", preset, startDate, endDate,
+      });
+      toast.success(
+        updated.subscriptionStatus === "SCHEDULED"
+          ? `Scheduled — access begins ${fmtDate(updated.currentPeriodStart)}`
+          : `Active through ${fmtDate(updated.currentPeriodEnd)}`
+      );
+      setPeriodTarget(null);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Failed to set billing period");
     } finally {
       setBusyId(null);
     }
@@ -597,7 +807,7 @@ export default function SuperAdminDashboardPage() {
             <input placeholder="Search name, email, slug..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {["ALL", "TRIALING", "ACTIVE", "EXPIRED", "CANCELLED"].map(s => (
+            {["ALL", "TRIALING", "SCHEDULED", "ACTIVE", "EXPIRED", "CANCELLED"].map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`tab-pill${statusFilter === s ? " active" : " nm-raised-sm"}`}
                 style={{ padding: "6px 12px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 600, fontSize: 11,
@@ -617,7 +827,7 @@ export default function SuperAdminDashboardPage() {
             <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(180,185,210,0.15)" }}>
-                  {["Name", "Type", "Email", "Slug", "Status", "Days Left", "Ends/Renews", "Joined", "Actions"].map(h => (
+                  {["Name", "Type", "Email", "Slug", "Status", "Days Left", "Billing Period", "Joined", "Actions"].map(h => (
                     <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: "var(--text-3)", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -638,19 +848,31 @@ export default function SuperAdminDashboardPage() {
                           {t.locked ? "🔒 " : ""}{st.label}
                         </span>
                       </td>
-                      <td style={{ padding: "14px 16px", color: "var(--text-2)" }}>{t.daysRemaining ?? "—"}</td>
-                      <td style={{ padding: "14px 16px", color: "var(--text-2)", whiteSpace: "nowrap" }}>
-                        {fmtDate(t.subscriptionStatus === "TRIALING" ? t.trialEndDate : t.currentPeriodEnd)}
+                      <td style={{ padding: "14px 16px", color: "var(--text-2)" }}>
+                        {t.daysRemaining ?? "—"}
+                        {t.subscriptionStatus === "SCHEDULED" && t.daysRemaining != null && (
+                          <span style={{ color: "var(--text-3)", fontSize: 11 }}> to start</span>
+                        )}
+                      </td>
+                      {/* The full window, not just the end date: with editable
+                          start dates a lone end date no longer tells you
+                          whether access has actually begun. */}
+                      <td style={{ padding: "14px 16px", color: "var(--text-2)", whiteSpace: "nowrap", fontSize: 12 }}>
+                        {t.subscriptionStatus === "TRIALING" && !t.currentPeriodEnd ? (
+                          <span style={{ color: "var(--text-3)" }}>Trial → {fmtDate(t.trialEndDate)}</span>
+                        ) : t.currentPeriodStart || t.currentPeriodEnd ? (
+                          <>{fmtDate(t.currentPeriodStart)} <span style={{ color: "var(--text-3)" }}>→</span> {fmtDate(t.currentPeriodEnd)}</>
+                        ) : "—"}
                       </td>
                       <td style={{ padding: "14px 16px", color: "var(--text-3)", whiteSpace: "nowrap" }}>{fmtDate(t.createdAt)}</td>
                       <td style={{ padding: "14px 16px" }}>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button disabled={busyId === t.id} onClick={() => handleOverride(t.id, "ACTIVATE")}
-                            title="Manually activate for 1 year" className="icon-btn" style={{ color: "var(--success)" }}>
-                            <PlayCircle style={{ width: 15, height: 15 }} />
+                          <button disabled={busyId === t.id} onClick={() => setPeriodTarget(t)}
+                            title="Set billing period (start & end dates)" className="icon-btn" style={{ color: "var(--accent)" }}>
+                            <CalendarCog style={{ width: 15, height: 15 }} />
                           </button>
-                          <button disabled={busyId === t.id} onClick={() => handleOverride(t.id, "SUSPEND")}
-                            title="Suspend access" className="icon-btn" style={{ color: "var(--danger)" }}>
+                          <button disabled={busyId === t.id} onClick={() => handleSuspend(t.id)}
+                            title="Suspend access (keeps the dates)" className="icon-btn" style={{ color: "var(--danger)" }}>
                             <Ban style={{ width: 15, height: 15 }} />
                           </button>
                         </div>
@@ -663,6 +885,16 @@ export default function SuperAdminDashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Billing period editor */}
+      {periodTarget && typeof document !== "undefined" && (
+        <PeriodEditor
+          tenant={periodTarget}
+          busy={busyId === periodTarget.id}
+          onClose={() => setPeriodTarget(null)}
+          onSave={handleSavePeriod}
+        />
+      )}
 
       {/* Reject modal */}
       {rejectTarget && typeof document !== "undefined" && createPortal(
