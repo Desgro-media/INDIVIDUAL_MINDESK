@@ -9,6 +9,7 @@ import {
   UserCog,
 } from "lucide-react";
 import ThemeToggle from "../../components/ThemeToggle";
+import PhonePromptModal from "../../components/PhonePromptModal";
 import api from "../../lib/api";
 import { clearSession } from "../../lib/authSession";
 import { getSubscriptionStatus } from "../../lib/subscriptionApi";
@@ -140,6 +141,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [searchQuery, setSearchQuery] = useState("");
   const [locked, setLocked]         = useState(false);
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const [showPhonePrompt, setShowPhonePrompt] = useState(false);
 
   useEffect(() => {
     const token    = localStorage.getItem("token");
@@ -155,7 +157,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // dashboard content or trusting the cached role/permissions.
     api.get("/auth/me")
       .then((res) => {
-        setUser({ ...JSON.parse(userData), ...res.data });
+        const merged = { ...JSON.parse(userData), ...res.data };
+        setUser(merged);
+        localStorage.setItem("user", JSON.stringify(merged));
+        // Phone became a required signup field after some accounts were
+        // already created — those tenant roots (never clinic staff, who
+        // don't sign up here and aren't listed in the superadmin panel)
+        // are prompted once per login until they fill it in.
+        if (!merged.tenantId && !merged.phone) {
+          setShowPhonePrompt(true);
+        }
       })
       .catch(() => {
         clearSession();
@@ -294,6 +305,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       padding: framePad, gap: frameGap,
       boxSizing: "border-box", alignItems: "stretch",
     }}>
+      {showPhonePrompt && (
+        <PhonePromptModal
+          onSaved={(phone) => {
+            const updated = { ...user, phone };
+            setUser(updated);
+            localStorage.setItem("user", JSON.stringify(updated));
+            setShowPhonePrompt(false);
+          }}
+        />
+      )}
 
       {/* Desktop sidebar — its own floating rounded panel, separate from
           the content frame (the gap between them shows the body's aurora

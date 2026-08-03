@@ -319,6 +319,7 @@ public class SuperAdminService {
                 .id(tenant.getId())
                 .name(tenant.getName())
                 .email(tenant.getUsername())
+                .phone(tenant.getPhone())
                 .slug(tenant.getSlug())
                 .createdAt(tenant.getCreatedAt())
                 .subscriptionStatus(status.getStatus())

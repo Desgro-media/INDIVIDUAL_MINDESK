@@ -14,6 +14,8 @@ export interface TenantSummary {
     id: number;
     name: string;
     email: string;
+    // Null for tenant roots created before phone became a required signup field.
+    phone: string | null;
     slug: string;
     createdAt: string;
     subscriptionStatus: SubscriptionStatus;

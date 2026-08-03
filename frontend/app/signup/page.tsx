@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Activity, User, Mail, Lock, UserPlus, ArrowLeft, Building2 } from "lucide-react";
+import { Activity, User, Mail, Lock, UserPlus, ArrowLeft, Building2, Phone } from "lucide-react";
 import api from "../../lib/api";
 import { storeSession } from "../../lib/authSession";
 
@@ -13,9 +13,11 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [clinicName, setClinicName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +29,7 @@ export default function SignupPage() {
     setLoading(true);
     try {
       const res = await api.post("/auth/signup", {
-        name, email, password, accountType,
+        name, email, phone, password, accountType,
         ...(accountType === "CLINIC" ? { clinicName } : {}),
       });
       storeSession(res.data.token, {
@@ -203,6 +205,24 @@ export default function SignupPage() {
 
             <div>
               <label className="block text-[11px] font-semibold text-[#8a90bc] uppercase tracking-[0.08em] mb-2">
+                Phone Number
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8a90bc] pointer-events-none" />
+                <input
+                  type="tel"
+                  className="w-full rounded-xl border border-[#E4E8FF] bg-[#F8F9FF] pl-11 pr-4 py-3.5 text-[14px] text-[#1b2048] placeholder:text-[#8a90bc] outline-none transition-colors focus:border-[#4f6ef7] focus:bg-white"
+                  placeholder="+91 98765 43210"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-[#8a90bc] uppercase tracking-[0.08em] mb-2">
                 Password
               </label>
               <div className="relative">
@@ -219,9 +239,31 @@ export default function SignupPage() {
               </div>
             </div>
 
+            <label className="flex items-start gap-2.5 text-[12.5px] text-[#4a5282] leading-snug select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                disabled={loading}
+                className="mt-0.5 w-4 h-4 rounded border-[#c7cfff] text-[#4f6ef7] focus:ring-[#4f6ef7] cursor-pointer shrink-0"
+                required
+              />
+              <span>
+                I agree to Mindesk&apos;s{" "}
+                <Link href="/terms" target="_blank" className="text-[#4f6ef7] font-semibold hover:text-[#3d5ce0]">
+                  Terms of Use
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy" target="_blank" className="text-[#4f6ef7] font-semibold hover:text-[#3d5ce0]">
+                  Privacy Policy
+                </Link>
+                , including how patient data I enter is handled.
+              </span>
+            </label>
+
             <button
               type="submit"
-              disabled={loading || !name || !email || !password || (accountType === "CLINIC" && !clinicName)}
+              disabled={loading || !name || !email || !phone || !password || !agreed || (accountType === "CLINIC" && !clinicName)}
               className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#4f6ef7] py-3.5 text-[14px] font-semibold text-white transition-all hover:bg-[#3d5ce0] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? "Creating account..." : (

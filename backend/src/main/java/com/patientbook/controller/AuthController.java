@@ -3,6 +3,7 @@ package com.patientbook.controller;
 import com.patientbook.dto.AuthResponse;
 import com.patientbook.dto.LoginRequest;
 import com.patientbook.dto.SignupRequest;
+import com.patientbook.dto.UpdatePhoneRequest;
 import com.patientbook.entity.AccountType;
 import com.patientbook.entity.AppUser;
 import com.patientbook.entity.ClinicService;
@@ -70,6 +71,7 @@ public class AuthController {
                 .username(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName().trim())
+                .phone(request.getPhone().trim())
                 .slug(generateUniqueSlug(request.getName()))
                 .accountType(accountType)
                 .build();
@@ -78,7 +80,7 @@ public class AuthController {
         String clinicName = accountType == AccountType.CLINIC && request.getClinicName() != null
                 && !request.getClinicName().isBlank() ? request.getClinicName().trim() : null;
         seedDefaultsFor(user.getId(), user.getName(), clinicName);
-        startTrial(user.getId());
+        startTrial(user.getId(), accountType);
 
         return ResponseEntity.ok(buildAuthResponse(user, issueToken(email, request.getPassword())));
     }
@@ -95,6 +97,21 @@ public class AuthController {
         staffAttendanceService.recordLogin(appUser);
 
         return ResponseEntity.ok(buildAuthResponse(appUser, jwt));
+    }
+
+    // Lets a logged-in tenant root fill in the phone number for accounts
+    // created before signup required one — the frontend prompts for this via
+    // a post-login modal whenever /auth/me comes back with a blank phone.
+    // Not restricted to tenant roots server-side (clinic staff never see the
+    // prompt client-side and aren't listed in the superadmin panel anyway),
+    // so this simply updates whichever account the JWT identifies.
+    @PatchMapping("/phone")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> updatePhone(@Valid @RequestBody UpdatePhoneRequest request) {
+        AppUser user = currentUserProvider.getCurrentUser();
+        user.setPhone(request.getPhone().trim());
+        appUserRepository.save(user);
+        return ResponseEntity.ok(buildAuthResponse(user, null));
     }
 
     // The frontend calls this before clearing its local session so a staff
@@ -145,6 +162,7 @@ public class AuthController {
                 .slug(appUser.getSlug())
                 .jobTitle(appUser.getJobTitle())
                 .role(appUser.getRole())
+                .phone(appUser.getPhone())
                 .accountType(appUser.getAccountType() != null ? appUser.getAccountType().name() : null)
                 .tenantId(appUser.getTenantId())
                 .permissions(permissions)
@@ -154,13 +172,22 @@ public class AuthController {
     // New signups start a 14-day trial. Existing (pre-launch) accounts are
     // handled separately — see StartupInitializer, which grandfathers them
     // as ACTIVE with no forced expiry instead of retroactively trial-gating them.
-    private void startTrial(Long psychologistId) {
+    //
+    // plan/amount are set here from accountType — CLINIC stays at the
+    // original ₹9,999/year, INDIVIDUAL is now ₹4,999/year. This is just the
+    // figure shown to the tenant and claimed on their payment submission
+    // (SubscriptionService); it's never re-derived elsewhere, so a superadmin
+    // override or renewal leaves it untouched once set here.
+    private void startTrial(Long psychologistId, AccountType accountType) {
         LocalDateTime now = LocalDateTime.now();
+        boolean isClinic = accountType == AccountType.CLINIC;
         subscriptionRepository.save(Subscription.builder()
                 .psychologistId(psychologistId)
                 .status("TRIALING")
                 .trialStartDate(now)
                 .trialEndDate(now.plusDays(TRIAL_DAYS))
+                .plan(isClinic ? "CLINIC_ANNUAL" : "INDIVIDUAL_ANNUAL")
+                .amount(new java.math.BigDecimal(isClinic ? "9999" : "4999"))
                 .build());
     }
 

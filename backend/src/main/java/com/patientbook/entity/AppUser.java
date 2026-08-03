@@ -52,6 +52,13 @@ public class AppUser {
 
     private String jobTitle;
 
+    // Contact phone number. Required on new signups (see SignupRequest); null
+    // on pre-existing tenant-root rows created before this field existed —
+    // the dashboard prompts those users to fill it in post-login (see
+    // AuthController.updatePhone). Null for staff rows, which never go
+    // through /auth/signup.
+    private String phone;
+
     // URL-safe, unique — identifies this practitioner's public booking link
     // (/book/{slug}) and every other public-facing endpoint. Only tenant-root
     // rows (tenantId == null) have one; staff rows leave this null (Postgres

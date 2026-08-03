@@ -72,6 +72,73 @@ curl https://3-15-20-100.sslip.io/actuator/health
 (swap in your actual `DOMAIN`). You should get `{"status":"UP"}` over a
 valid HTTPS connection — Caddy issued the cert automatically on first request.
 
+### 7. Set up daily backups
+
+There's no migration framework and no separate data volume — `individual_pgdata` (Postgres's data) lives
+on the instance's root EBS volume, so "back up the database" means "snapshot the whole instance daily."
+[`deploy/setup-ebs-backups.sh`](deploy/setup-ebs-backups.sh) wires this up via AWS Data Lifecycle Manager
+(DLM) — a native AWS service, not a cron job running on the box itself, so it keeps working even if the
+instance is unhealthy.
+
+Run this from **your own machine** (or CloudShell) with the AWS CLI configured against the account the
+instance lives in — not from inside the EC2 instance:
+
+```bash
+./deploy/setup-ebs-backups.sh <instance-id> <region> [retain-count] [snapshot-time-utc]
+# e.g.
+./deploy/setup-ebs-backups.sh i-0123456789abcdef0 us-east-1 7 02:00
+```
+
+This tags the instance, creates the (one-time, reusable) `AWSDataLifecycleManagerDefaultRole` IAM role if
+it doesn't already exist, and creates a policy that snapshots every volume on the instance daily,
+retaining the last 7 (default) snapshots. It's idempotent — re-run it any time to change the schedule or
+retention count. The first snapshot won't appear until the next scheduled run; verify anytime with:
+
+```bash
+aws ec2 describe-snapshots --region <region> --filters Name=tag:mindesk:automated-backup,Values=true
+```
+
+**Restoring from a snapshot** (disaster recovery — instance lost, disk corrupted, or a bad manual
+`ALTER TABLE`):
+1. EC2 console → Snapshots → pick the most recent good one → **Create volume** (same AZ as your instance).
+2. Stop the broken instance, detach its root volume, attach the new volume in its place as `/dev/sda1` (or
+   `/dev/xvda`, whatever the original root device was), then start the instance.
+3. Alternatively, launch a brand-new instance directly from the snapshot (Snapshots → **Create image**,
+   then launch an instance from that AMI) if the original instance itself is unrecoverable, then re-point
+   the Elastic IP at it.
+4. Either way, `docker compose -f docker-compose.prod.yml up -d` on the restored instance brings the app
+   back up against the restored data — no separate DB restore step needed, since the whole volume (Docker
+   volumes included) came back with the snapshot.
+
+This only protects against disk/data loss, not against a bad schema change mid-day — daily snapshots mean
+up to 24h of data loss in the worst case. If that's ever not good enough, the next step up is `pg_dump`
+on a tighter schedule (e.g. hourly) shipped somewhere off-instance (S3), which isn't set up here.
+
+## Uptime monitoring
+
+[`.github/workflows/uptime-check.yml`](.github/workflows/uptime-check.yml) pings `/actuator/health` every
+5 minutes from GitHub's infrastructure (not the EC2 box — so it still fires if the whole instance is
+down) and posts a Telegram alert on failure. One-time setup:
+
+1. **Get a Telegram bot token** — message [@BotFather](https://t.me/BotFather) on Telegram, `/newbot`,
+   follow the prompts. (A separate bot from `TELEGRAM_BOT_TOKEN` if you're using that integration too —
+   keep alerting and patient-facing notifications on different bots.)
+2. **Get your chat ID** — message your new bot anything, then visit
+   `https://api.telegram.org/bot<token>/getUpdates` in a browser and read `message.chat.id` from the
+   JSON response.
+3. **Add repository secrets** — GitHub repo → Settings → Secrets and variables → Actions → New repository
+   secret:
+   - `HEALTH_CHECK_URL` — e.g. `https://3-15-20-100.sslip.io/actuator/health` (your real `DOMAIN`)
+   - `MONITOR_TELEGRAM_BOT_TOKEN` — from step 1
+   - `MONITOR_TELEGRAM_CHAT_ID` — from step 2
+4. **Test it** — Actions tab → "Uptime check" workflow → **Run workflow** (the `workflow_dispatch`
+   trigger lets you fire it on demand instead of waiting for the schedule). Temporarily stop the backend
+   container (`docker compose -f docker-compose.prod.yml stop individual-backend`) and re-run to confirm
+   the Telegram alert actually arrives, then start it back up.
+
+It alerts on *every* failed check, not just the first, so a prolonged outage keeps nudging you every 5
+minutes instead of going silent after one ping.
+
 ## Part 2 — Vercel: frontend
 
 1. vercel.com → Add New Project → import this GitHub repo
