@@ -15,6 +15,9 @@ public class TenantSummaryDto {
     private Long id;
     private String name;
     private String email;
+    // Null for tenant roots created before phone became a required signup
+    // field — shown as such in the superadmin tenant table, not hidden.
+    private String phone;
     private String slug;
     private LocalDateTime createdAt;
     // TRIALING | SCHEDULED | ACTIVE | EXPIRED | CANCELLED — always the live

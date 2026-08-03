@@ -166,7 +166,7 @@ export default function Home() {
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EA5790]/10 border border-[#EA5790]/25 text-[#D22C7A] text-[12px] font-semibold">
                 14-day free trial
               </span>
-              <span className="text-[#8a90bc] text-[13px]">then just ₹9,999/year</span>
+              <span className="text-[#8a90bc] text-[13px]">then from just ₹4,999/year</span>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -276,12 +276,12 @@ export default function Home() {
               Simple, Transparent Pricing
             </h2>
             <p className="text-[#4a5282] text-lg font-light">
-              One plan. No surprises. Try it free for 14 days.
+              Two plans. No surprises. Try either free for 14 days.
             </p>
           </div>
         </ScrollReveal>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           {/* Trial card */}
           <ScrollReveal delay={0} animationClass="animate-fade-in-up">
             <div className="relative h-full bg-white border border-[#E4E8FF] p-8 rounded-3xl overflow-hidden flex flex-col shadow-[0_12px_28px_rgba(80,110,200,0.07)]">
@@ -323,16 +323,16 @@ export default function Home() {
               <span className="absolute top-6 right-6 px-3 py-1 rounded-full bg-white/15 border border-white/25 text-white text-[10px] font-bold uppercase tracking-[0.1em]">
                 Recommended
               </span>
-              <p className="text-white/70 text-sm font-semibold uppercase tracking-[0.1em] mb-3">Solo or Clinic</p>
+              <p className="text-white/70 text-sm font-semibold uppercase tracking-[0.1em] mb-3">Individual</p>
               <div className="flex items-baseline gap-1.5 mb-6">
-                <span className="text-4xl font-bold text-white">₹9,999</span>
+                <span className="text-4xl font-bold text-white">₹4,999</span>
                 <span className="text-white/60 text-sm">/ year</span>
               </div>
               <ul className="flex flex-col gap-3 mb-8 flex-1">
                 {[
                   "Everything in the free trial",
                   "Unlimited patients & appointments",
-                  "Clinics: add unlimited staff logins, free",
+                  "Your own booking page & analytics",
                   "Pay easily via GPay / UPI",
                   "Priority email support",
                 ].map(item => (
@@ -345,6 +345,38 @@ export default function Home() {
               <Link
                 href="/signup"
                 className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-white text-[#4B3EC2] text-[14px] font-semibold hover:bg-white/90 transition-all shadow-md"
+              >
+                Get Started <ArrowRight className="w-3.5 h-3.5 ml-2" />
+              </Link>
+            </div>
+          </ScrollReveal>
+
+          {/* Clinic / yearly plan card */}
+          <ScrollReveal delay={240} animationClass="animate-fade-in-up">
+            <div className="relative h-full bg-white border border-[#E4E8FF] p-8 rounded-3xl overflow-hidden flex flex-col shadow-[0_12px_28px_rgba(80,110,200,0.07)]">
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#8b5cf6]/25 to-transparent" />
+              <p className="text-[#4a5282] text-sm font-semibold uppercase tracking-[0.1em] mb-3">Clinic</p>
+              <div className="flex items-baseline gap-1.5 mb-6">
+                <span className="text-4xl font-bold text-[#1b2048]">₹9,999</span>
+                <span className="text-[#8a90bc] text-sm">/ year</span>
+              </div>
+              <ul className="flex flex-col gap-3 mb-8 flex-1">
+                {[
+                  "Everything in the free trial",
+                  "Unlimited patients & appointments",
+                  "Add unlimited staff logins, free",
+                  "Pay easily via GPay / UPI",
+                  "Priority email support",
+                ].map(item => (
+                  <li key={item} className="flex items-start gap-2.5 text-[#4a5282] text-sm">
+                    <Check className="w-4 h-4 text-[#8b5cf6] mt-0.5 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center px-6 py-3 rounded-full border border-[#8b5cf6]/25 text-[#1b2048] text-[14px] font-semibold hover:bg-[#8b5cf6]/[0.06] transition-all"
               >
                 Get Started <ArrowRight className="w-3.5 h-3.5 ml-2" />
               </Link>
@@ -409,7 +441,7 @@ export default function Home() {
             Ready to run your own practice?
           </h2>
           <p className="text-[#4a5282] text-lg font-light mb-10 max-w-xl mx-auto">
-            Set up your booking page in minutes. 14-day free trial, then ₹9,999/year — no credit card required.
+            Set up your booking page in minutes. 14-day free trial, then from ₹4,999/year — no credit card required.
           </p>
           <Link
             href="/signup"
@@ -419,6 +451,10 @@ export default function Home() {
           </Link>
           <p className="mt-16 text-sm text-[#8a90bc]">
             &copy; {new Date().getFullYear()} Mindesk. All rights reserved.
+            {" "}&middot;{" "}
+            <Link href="/terms" className="hover:text-[#4f6ef7] transition-colors">Terms of Use</Link>
+            {" "}&middot;{" "}
+            <Link href="/privacy" className="hover:text-[#4f6ef7] transition-colors">Privacy Policy</Link>
           </p>
         </ScrollReveal>
       </footer>

@@ -18,6 +18,10 @@ public class SignupRequest {
     @Size(min = 8, message = "Password must be at least 8 characters")
     private String password;
 
+    @NotBlank
+    @Size(max = 30)
+    private String phone;
+
     // "INDIVIDUAL" or "CLINIC" — defaults to INDIVIDUAL (see AuthController)
     // when omitted, so any pre-existing signup integration keeps working
     // unchanged. Validated/parsed server-side, never trusted as a raw enum.

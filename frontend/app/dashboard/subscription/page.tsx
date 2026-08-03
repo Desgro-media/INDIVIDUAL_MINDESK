@@ -50,13 +50,21 @@ export default function SubscriptionPage() {
   const [loading, setLoading] = useState(true);
 
   const [upiRef, setUpiRef] = useState("");
-  const [amount, setAmount] = useState("9999");
+  const [amount, setAmount] = useState("");
   const [screenshot, setScreenshot] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = () => {
     Promise.all([getSubscriptionStatus(), getPaymentSubmissions()])
-      .then(([s, subs]) => { setStatus(s); setSubmissions(subs); })
+      .then(([s, subs]) => {
+        setStatus(s);
+        setSubmissions(subs);
+        // Pre-fill with this tenant's actual plan amount (₹4,999 individual /
+        // ₹9,999 clinic — see AuthController.startTrial) rather than a
+        // hardcoded figure, so the suggested value is never wrong for
+        // whichever plan this account is actually on.
+        setAmount(prev => prev || (s.amount != null ? String(s.amount) : ""));
+      })
       .catch(() => toast.error("Failed to load subscription status"))
       .finally(() => setLoading(false));
   };

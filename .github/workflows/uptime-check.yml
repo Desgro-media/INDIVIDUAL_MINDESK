@@ -1,0 +1,58 @@
+name: Uptime check
+
+# Pings the production backend's health endpoint on a schedule and pings a
+# Telegram chat if it's down. Runs on GitHub's infrastructure, not the EC2
+# box itself — so it still fires if the whole instance is unreachable, which
+# a script running on the instance couldn't do for itself.
+#
+# One-time setup (see DEPLOY.md "Uptime monitoring"):
+#   Repo Settings -> Secrets and variables -> Actions -> New repository secret
+#     HEALTH_CHECK_URL          e.g. https://3-15-20-100.sslip.io/actuator/health
+#     MONITOR_TELEGRAM_BOT_TOKEN
+#     MONITOR_TELEGRAM_CHAT_ID
+#
+# Alerts on every failed check (not just the first), so a prolonged outage
+# keeps nudging you every 5 minutes instead of going silent after one ping —
+# intentional, not a bug.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check health endpoint
+        id: health
+        run: |
+          set +e
+          body=$(curl -sS -m 15 -o /tmp/health.json -w "%{http_code}" "${{ secrets.HEALTH_CHECK_URL }}")
+          status=$?
+          http_code="$body"
+          content=$(cat /tmp/health.json 2>/dev/null || echo "")
+          echo "HTTP status: $http_code"
+          echo "Body: $content"
+
+          if [ "$status" -ne 0 ] || [ "$http_code" != "200" ] || ! echo "$content" | grep -q '"status":"UP"'; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "detail=curl_exit=$status http_code=$http_code body=$content" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Alert Telegram on failure
+        if: steps.health.outputs.healthy == 'false'
+        run: |
+          MSG=$(printf '🔴 Mindesk backend health check FAILED\nTime: %s\n%s\nURL: %s' \
+            "$(date -u +'%Y-%m-%d %H:%M:%S UTC')" \
+            "${{ steps.health.outputs.detail }}" \
+            "${{ secrets.HEALTH_CHECK_URL }}")
+          curl -sS -X POST "https://api.telegram.org/bot${{ secrets.MONITOR_TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.MONITOR_TELEGRAM_CHAT_ID }}" \
+            --data-urlencode text="$MSG"
+
+      - name: Fail the run so it shows red in the Actions tab
+        if: steps.health.outputs.healthy == 'false'
+        run: exit 1

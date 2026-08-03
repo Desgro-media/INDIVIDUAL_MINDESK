@@ -22,6 +22,11 @@ public class AuthResponse {
     private String jobTitle;
     private String role;
 
+    // Null on tenant-root accounts created before phone became a required
+    // signup field — the frontend prompts for it post-login when this is
+    // blank (see the dashboard layout's phone-prompt modal).
+    private String phone;
+
     // INDIVIDUAL/CLINIC — null for staff rows and the superadmin (only
     // meaningful on a tenant root). Drives the frontend's Individual-vs-
     // clinic dashboard shape.

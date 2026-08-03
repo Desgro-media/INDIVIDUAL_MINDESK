@@ -1712,3 +1712,60 @@ a.grad-card:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
   transition: background 0.18s ease;
 }
 .data-table tbody tr:hover { background: var(--card-2); }
+
+/* ── Legal document prose (Terms of Use / Privacy Policy) ───────────
+   Static light theme (not theme-var-driven) to match the marketing
+   site's landing/signup/login pages, which these are part of. */
+.legal-prose h2 {
+  font-family: var(--font-playfair), serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1b2048;
+  margin-top: 2.5rem;
+  margin-bottom: 0.9rem;
+}
+.legal-prose h2:first-child { margin-top: 0; }
+.legal-prose h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1b2048;
+  margin-top: 1.6rem;
+  margin-bottom: 0.6rem;
+}
+.legal-prose p {
+  color: #4a5282;
+  font-size: 15px;
+  line-height: 1.75;
+  margin-bottom: 1rem;
+  font-weight: 300;
+}
+.legal-prose ul {
+  color: #4a5282;
+  font-size: 15px;
+  line-height: 1.75;
+  margin: 0 0 1.25rem 0;
+  padding-left: 1.4rem;
+  font-weight: 300;
+}
+.legal-prose li { margin-bottom: 0.5rem; list-style: disc; }
+.legal-prose li::marker { color: #b9c0ee; }
+.legal-prose strong { color: #1b2048; font-weight: 600; }
+.legal-prose a { color: #4f6ef7; font-weight: 500; text-decoration: underline; text-underline-offset: 2px; }
+.legal-prose a:hover { color: #3d5ce0; }
+.legal-prose .legal-placeholder {
+  background: #FFF7ED;
+  color: #9A5B13;
+  border: 1px solid #FCE0B8;
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  font-weight: 600;
+  font-size: 0.92em;
+}
+.legal-prose .legal-note {
+  background: #F8F9FF;
+  border: 1px solid #E4E8FF;
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin: 1.25rem 0;
+}
+.legal-prose .legal-note p:last-child { margin-bottom: 0; }

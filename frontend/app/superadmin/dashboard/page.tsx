@@ -827,7 +827,7 @@ export default function SuperAdminDashboardPage() {
             <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(180,185,210,0.15)" }}>
-                  {["Name", "Type", "Email", "Slug", "Status", "Days Left", "Billing Period", "Joined", "Actions"].map(h => (
+                  {["Name", "Type", "Email", "Phone", "Slug", "Status", "Days Left", "Billing Period", "Joined", "Actions"].map(h => (
                     <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: "var(--text-3)", fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -842,6 +842,9 @@ export default function SuperAdminDashboardPage() {
                         <AccountTypeBadge accountType={t.accountType} staffCount={t.staffCount} />
                       </td>
                       <td style={{ padding: "14px 16px", color: "var(--text-2)" }}>{t.email}</td>
+                      <td style={{ padding: "14px 16px", color: t.phone ? "var(--text-2)" : "var(--text-3)", whiteSpace: "nowrap" }}>
+                        {t.phone || "—"}
+                      </td>
                       <td style={{ padding: "14px 16px", color: "var(--text-3)", fontSize: 12 }}>{t.slug}</td>
                       <td style={{ padding: "14px 16px" }}>
                         <span style={{ padding: "4px 10px", borderRadius: 8, background: st.bg, color: st.color, fontWeight: 700, fontSize: 11 }}>
