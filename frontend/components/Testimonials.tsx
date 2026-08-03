@@ -4,9 +4,9 @@ import ScrollReveal from "@/components/ScrollReveal";
 type Testimonial = {
   name: string;
   title: string;
-  photo: string;
+  photo?: string;
   quote: string;
-  instagram: string;
+  instagram?: string;
   // Same three-tone theme shape as the Solutions showcase and Feature Grid
   // sections (bgFrom/bgTo/border/accentDark/accentBase) — one palette reused
   // everywhere on the page instead of each section picking its own colors.
@@ -40,12 +40,10 @@ const TESTIMONIALS: Testimonial[] = [
     bgFrom: "#FDF0F5", bgTo: "#FFF8FA", border: "#FAD7E4", accentDark: "#A61E56", accentBase: "#EA5790",
   },
   {
-    name: "Jasna Jafar",
+    name: "Sangeetha",
     title: "Consultant Psychologist — Couple, Individual & Family Therapy",
-    photo: "/testimonials/jasna-jafar.jpg",
     quote:
       "I used to manage bookings over DMs and WhatsApp, which got messy fast. With my own Mindesk link, clients pick a slot themselves and I just show up prepared, session notes and all.",
-    instagram: "https://www.instagram.com/jasnajafar_psychologist",
     bgFrom: "#EEF2FF", bgTo: "#F8FAFF", border: "#DCE3FF", accentDark: "#2A3FBD", accentBase: "#4F6EF7",
   },
 ];
@@ -90,26 +88,35 @@ export default function Testimonials() {
               </p>
 
               <div className="relative flex items-center gap-3 pt-5" style={{ borderTop: `1px solid ${t.border}` }}>
-                <img
-                  src={t.photo}
-                  alt={t.name}
-                  className="w-11 h-11 rounded-full object-cover shrink-0"
-                  style={{ objectPosition: "50% 15%", border: "1.5px solid #fff", boxShadow: `0 0 0 1.5px ${t.border}` }}
-                />
+                {t.photo ? (
+                  <img
+                    src={t.photo}
+                    alt={t.name}
+                    className="w-11 h-11 rounded-full object-cover shrink-0"
+                    style={{ objectPosition: "50% 15%", border: "1.5px solid #fff", boxShadow: `0 0 0 1.5px ${t.border}` }}
+                  />
+                ) : (
+                  <div
+                    className="w-11 h-11 rounded-full shrink-0"
+                    style={{ background: "#fff", border: "1.5px solid #fff", boxShadow: `0 0 0 1.5px ${t.border}` }}
+                  />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="text-[#1b2048] font-semibold text-sm truncate">{t.name}</p>
                   <p className="text-[#4a5282]/70 text-[12px] truncate">{t.title}</p>
                 </div>
-                <a
-                  href={t.instagram}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`${t.name} on Instagram`}
-                  className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center transition-colors shrink-0"
-                  style={{ color: t.accentBase }}
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                {t.instagram && (
+                  <a
+                    href={t.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${t.name} on Instagram`}
+                    className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center transition-colors shrink-0"
+                    style={{ color: t.accentBase }}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
               </div>
             </div>
           </ScrollReveal>
