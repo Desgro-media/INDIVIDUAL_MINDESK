@@ -4,6 +4,8 @@ import com.patientbook.dto.AvailabilityBlockDto;
 import com.patientbook.dto.DoctorDateOverrideDto;
 import com.patientbook.dto.DoctorServicePriceDto;
 import com.patientbook.entity.AppUser;
+import com.patientbook.repository.AppointmentRepository;
+import com.patientbook.repository.ClinicHolidayRepository;
 import com.patientbook.security.CurrentUserProvider;
 import com.patientbook.service.DoctorAvailabilityService;
 import com.patientbook.service.StaffService;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 // Lets a clinic OWNER manage a specific staff member's services/pricing and
 // availability directly, instead of requiring that staff member to log in
@@ -40,11 +44,33 @@ public class StaffAvailabilityController {
     private final DoctorAvailabilityService doctorAvailabilityService;
     private final StaffService staffService;
     private final CurrentUserProvider currentUserProvider;
+    private final AppointmentRepository appointmentRepository;
+    private final ClinicHolidayRepository clinicHolidayRepository;
 
     private AppUser requireOwnedStaff(Long staffId) {
         AppUser caller = currentUserProvider.getCurrentUser();
         staffService.requireClinicOwner(caller);
         return staffService.requireOwnedStaff(caller, staffId);
+    }
+
+    // Available slots on a specific staff member's own calendar — mirrors
+    // DoctorController.getMySlots exactly (see its comments), just scoped to
+    // staffId instead of the caller, so a clinic owner can pick a
+    // colleague's open time when scheduling a session on their behalf
+    // (see the dashboard's manual "Schedule Session" flow).
+    @GetMapping("/slots")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<String>> getStaffSlots(@PathVariable Long staffId,
+                                                        @RequestParam LocalDate date,
+                                                        @RequestParam(required = false) String mode) {
+        AppUser staff = requireOwnedStaff(staffId);
+        boolean isHoliday = clinicHolidayRepository.findByHolidayDateAndPsychologistId(date, staff.getTenantId()).isPresent();
+        Set<String> booked = appointmentRepository.findByAppointmentDateAndAssignedDoctorId(date, staff.getId())
+                .stream()
+                .filter(a -> !"CANCELLED".equals(a.getStatus()))
+                .map(a -> a.getStartTime().toString().substring(0, 5))
+                .collect(Collectors.toSet());
+        return ResponseEntity.ok(doctorAvailabilityService.getAvailableSlotsForDoctor(staff.getId(), date, booked, isHoliday, mode));
     }
 
     // ── Services & pricing ──────────────────────────────────────────────

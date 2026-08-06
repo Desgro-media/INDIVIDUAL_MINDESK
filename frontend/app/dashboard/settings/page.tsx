@@ -578,25 +578,30 @@ function HolidaysCalendar({ holidays, onToggle }: { holidays: string[]; onToggle
 // owner) or a staff-doctor. The rest are clinic-wide (ClinicSettings, bank
 // accounts, holidays) and require the SETTINGS permission for clinic staff.
 //
-// Availability is selfScoped but ALSO hidden for any clinic context (owner
-// or staff) — a clinic owner manages each staff member's calendar directly
-// from Staff Management instead (see StaffAvailabilityController /
-// components/AvailabilityEditor), so there is no self-service calendar tab
-// to show a clinic account here. Individuals are unaffected — they have no
-// "staff" to manage it under, so they keep self-serving it here as before.
+// Availability is selfScoped but ALSO hidden for clinic STAFF specifically —
+// a clinic owner manages each staff member's calendar directly from Staff
+// Management instead (see StaffAvailabilityController / components/
+// AvailabilityEditor), so a staff row has no self-service calendar tab here.
+// The clinic OWNER (tenant root) still gets it, though: they're a bookable
+// practitioner in their own right (shows up on the public booking roster
+// same as any staff-doctor), and there is no "someone else's card" on Staff
+// Management for anyone to manage the owner's own calendar on their behalf —
+// hiding it here would leave them with literally no way to set it.
+// Individuals are unaffected either way — they have no "staff" to manage it
+// under, so they keep self-serving it here as before.
 const TABS = [
-  { key: 'profile',      label: 'Profile',              selfScoped: true, hideForClinic: false },
-  { key: 'availability', label: 'Availability',         selfScoped: true, hideForClinic: true  },
-  { key: 'practice',     label: 'Practice Info',        selfScoped: false, hideForClinic: false },
-  { key: 'payment',      label: 'Payment & Banking',    selfScoped: false, hideForClinic: false },
-  { key: 'holidays',     label: 'Leave Days',           selfScoped: false, hideForClinic: false },
+  { key: 'profile',      label: 'Profile',              selfScoped: true, hideForStaff: false },
+  { key: 'availability', label: 'Availability',         selfScoped: true, hideForStaff: true  },
+  { key: 'practice',     label: 'Practice Info',        selfScoped: false, hideForStaff: false },
+  { key: 'payment',      label: 'Payment & Banking',    selfScoped: false, hideForStaff: false },
+  { key: 'holidays',     label: 'Leave Days',           selfScoped: false, hideForStaff: false },
 ] as const;
 type TabKey = typeof TABS[number]['key'];
 
 // Mirrors dashboard/layout.tsx's own access computation — kept local (no
 // shared context in this app) rather than introduced as a new dependency.
 function useSettingsAccess() {
-  const [access, setAccess] = useState({ showSelfScoped: true, showClinicWide: true, isClinicContext: false });
+  const [access, setAccess] = useState({ showSelfScoped: true, showClinicWide: true, isStaff: false });
   useEffect(() => {
     try {
       const user = JSON.parse(localStorage.getItem('user') || 'null');
@@ -607,9 +612,7 @@ function useSettingsAccess() {
       setAccess({
         showSelfScoped: !isStaff || isStaffDoctor,
         showClinicWide: !isStaff || permissions.includes('SETTINGS'),
-        // A clinic staff row (tenantId set) is always clinic context; a
-        // tenant root is clinic context only if they signed up as CLINIC.
-        isClinicContext: isStaff || user.accountType === 'CLINIC',
+        isStaff,
       });
     } catch { /* default to showing everything if we can't tell */ }
   }, []);
@@ -617,9 +620,9 @@ function useSettingsAccess() {
 }
 
 export default function SettingsPage() {
-  const { showSelfScoped, showClinicWide, isClinicContext } = useSettingsAccess();
+  const { showSelfScoped, showClinicWide, isStaff } = useSettingsAccess();
   const visibleTabs = TABS.filter(t => {
-    if (t.hideForClinic && isClinicContext) return false;
+    if (t.hideForStaff && isStaff) return false;
     return t.selfScoped ? showSelfScoped : showClinicWide;
   });
   const [tab, setTab] = useState<TabKey>('profile');
@@ -638,7 +641,7 @@ export default function SettingsPage() {
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text-1)", letterSpacing: "-0.03em", marginBottom: 4 }}>Settings</h1>
         <p style={{ fontSize: 14, color: "var(--text-3)" }}>
-          {isClinicContext ? "Your profile and practice details." : "Your profile, availability, and practice details."}
+          {isStaff ? "Your profile and practice details." : "Your profile, availability, and practice details."}
         </p>
       </div>
 

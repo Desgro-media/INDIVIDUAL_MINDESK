@@ -21,6 +21,7 @@ import {
 import api from "../../../../lib/api";
 import { CHART, useThemeMode, SeriesTooltip } from "../../../../lib/chartTheme";
 import { SpotlightDiv } from "../../../../components/Spotlight";
+import { getMySlots } from "../../../../lib/profileApi";
 
 // ── Custom dropdown (dark-mode safe — avoids native <select> OS rendering) ───
 function CalDrop({ label, options, onSelect }: {
@@ -271,6 +272,17 @@ export default function ClientTimelinePage() {
     } catch { /* default to hidden if we can't tell */ }
   }, []);
 
+  // Roster of bookable psychologists in this clinic, for the doctor picker
+  // on the Schedule/Add Session modals below. GET /staff only succeeds for
+  // a clinic OWNER (tenant root, accountType CLINIC) — it 403s for staff
+  // logins and for individual practitioners, which is exactly who doesn't
+  // need a picker (a staff-doctor scheduling for themselves needs no
+  // choice; an individual has no one else to choose). See the
+  // Promise.allSettled fetch below — a rejection here just leaves this
+  // empty and the picker stays hidden, same as every other optional block
+  // on this page.
+  const [staffDoctors, setStaffDoctors] = useState<{ id: number; name: string; jobTitle: string | null }[]>([]);
+
   // Timeline controls
   const [search, setSearch]       = useState("");
   const [sortDesc, setSortDesc]   = useState(true);
@@ -287,6 +299,7 @@ export default function ClientTimelinePage() {
   const [schedTime, setSchedTime] = useState("");
   const [schedType, setSchedType] = useState("");
   const [schedMode, setSchedMode] = useState<"ONLINE" | "OFFLINE">("OFFLINE");
+  const [schedDoctorId, setSchedDoctorId] = useState(""); // "" = myself
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [schedSaving, setSchedSaving] = useState(false);
 
@@ -295,6 +308,7 @@ export default function ClientTimelinePage() {
   const [pastTime, setPastTime]             = useState("");
   const [pastType, setPastType]             = useState("");
   const [pastMode, setPastMode]             = useState<"ONLINE" | "OFFLINE">("OFFLINE");
+  const [pastDoctorId, setPastDoctorId]     = useState(""); // "" = myself
   const [pastStatus, setPastStatus]         = useState("COMPLETED");
   const [pastNotes, setPastNotes]           = useState("");
   const [pastSaving, setPastSaving]         = useState(false);
@@ -513,10 +527,10 @@ export default function ClientTimelinePage() {
     }
   };
 
-  const fetchAvailableSlots = async (dateStr: string, mode: "ONLINE" | "OFFLINE" = schedMode) => {
+  const fetchAvailableSlots = async (dateStr: string, mode: "ONLINE" | "OFFLINE" = schedMode, doctorId: string = schedDoctorId) => {
     try {
-      const res = await api.get(`/me/slots?date=${dateStr}&mode=${mode}`);
-      setAvailableSlots(Array.isArray(res.data) ? res.data : []);
+      const res = await getMySlots(dateStr, mode, doctorId ? Number(doctorId) : undefined);
+      setAvailableSlots(Array.isArray(res) ? res : []);
     } catch {
       setAvailableSlots([]);
     }
@@ -532,7 +546,7 @@ export default function ClientTimelinePage() {
   };
 
   const openScheduleModal = () => {
-    setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE");
+    setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE"); setSchedDoctorId("");
     setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
     setAvailableSlots([]);
     setScheduleModalOpen(true);
@@ -542,7 +556,7 @@ export default function ClientTimelinePage() {
     setSchedBankAccountName(defaultAcc?.accountName ?? "");
   };
   const openPastModal = () => {
-    setPastDate(""); setPastTime(""); setPastType(""); setPastMode("OFFLINE"); setPastNotes(""); setPastStatus("COMPLETED");
+    setPastDate(""); setPastTime(""); setPastType(""); setPastMode("OFFLINE"); setPastDoctorId(""); setPastNotes(""); setPastStatus("COMPLETED");
     setPastPayStatus("PAID"); setPastPayAmount(""); setPastPayMethod("CASH");
     setPastModalOpen(true);
     fetchServices();
@@ -568,12 +582,13 @@ export default function ClientTimelinePage() {
         startTime: schedTime,
         sessionType: schedType,
         mode: schedMode,
+        staffId: schedDoctorId ? Number(schedDoctorId) : undefined,
         notes: ""
       });
       setAppointments(prev => [res.data, ...prev]);
       await applyPaymentAfterCreate(res.data.id, schedPayStatus, schedPayAmount, schedPayMethod, schedBankAccountId, schedBankAccountName);
       setScheduleModalOpen(false);
-      setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE");
+      setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE"); setSchedDoctorId("");
       setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
       setSchedBankAccountId(""); setSchedBankAccountName("");
     } catch (err) {
@@ -594,13 +609,14 @@ export default function ClientTimelinePage() {
         startTime:       pastTime,
         sessionType:     pastType,
         mode:            pastMode,
+        staffId:         pastDoctorId || undefined,
         status:          pastStatus,
         notes:           pastNotes,
       });
       setAppointments(prev => [res.data, ...prev]);
       await applyPaymentAfterCreate(res.data.id, pastPayStatus, pastPayAmount, pastPayMethod, pastBankAccountId, pastBankAccountName);
       setPastModalOpen(false);
-      setPastDate(""); setPastTime(""); setPastType(""); setPastMode("OFFLINE"); setPastNotes(""); setPastStatus("COMPLETED");
+      setPastDate(""); setPastTime(""); setPastType(""); setPastMode("OFFLINE"); setPastDoctorId(""); setPastNotes(""); setPastStatus("COMPLETED");
       setPastPayStatus("PAID"); setPastPayAmount(""); setPastPayMethod("CASH");
       setPastBankAccountId(""); setPastBankAccountName("");
     } catch (err: any) {
@@ -624,8 +640,13 @@ export default function ClientTimelinePage() {
       api.get(`/mood/patient/${params.id}`),
       api.get(`/bank-accounts`),
       api.get(`/patients/${params.id}/attachments`),
+      // Only a clinic OWNER can call this — it 403s for staff logins and
+      // individual practitioners, both of whom don't need a doctor picker
+      // anyway (see the "staffDoctors" comment above). A rejection here
+      // just leaves the picker hidden, same as every other optional block.
+      api.get(`/staff`),
     ])
-    .then(([pRes, aRes, sRes, nRes, invRes, moodRes, bankRes, attRes]) => {
+    .then(([pRes, aRes, sRes, nRes, invRes, moodRes, bankRes, attRes, staffRes]) => {
       if (pRes.status === "fulfilled") setPatient(pRes.value.data);
       if (aRes.status === "fulfilled") setAppointments(aRes.value.data);
       if (sRes.status === "fulfilled") setServices(sRes.value.data);
@@ -634,6 +655,9 @@ export default function ClientTimelinePage() {
       if (moodRes.status === "fulfilled") setMoodLogs(moodRes.value.data);
       if (bankRes.status === "fulfilled") setBankAccounts((bankRes.value.data ?? []).filter((b: BankAccount) => b.active));
       if (attRes.status === "fulfilled") setAttachments(attRes.value.data);
+      if (staffRes.status === "fulfilled") {
+        setStaffDoctors((staffRes.value.data ?? []).filter((s: any) => s.role === "ROLE_PSYCHOLOGIST" && s.enabled));
+      }
     })
     .catch(console.error)
     .finally(() => setLoading(false));
@@ -1632,6 +1656,30 @@ export default function ClientTimelinePage() {
                 </select>
               </div>
 
+              {staffDoctors.length > 0 && (
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Doctor</label>
+                  <select
+                    className="nm-input"
+                    style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                    value={schedDoctorId}
+                    onChange={e => {
+                      const next = e.target.value;
+                      setSchedDoctorId(next);
+                      setSchedTime("");
+                      // Each doctor has their own calendar — re-fetch slots
+                      // for whichever one is now selected.
+                      if (schedDate) fetchAvailableSlots(schedDate, schedMode, next);
+                    }}
+                  >
+                    <option value="">Myself</option>
+                    {staffDoctors.map(d => (
+                      <option key={d.id} value={d.id.toString()}>{d.name}{d.jobTitle ? ` — ${d.jobTitle}` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Mode</label>
                 <ModeToggle value={schedMode} onChange={m => {
@@ -1762,6 +1810,19 @@ export default function ClientTimelinePage() {
                   {services.map(s => <option key={s.id} value={s.id.toString()}>{s.name}</option>)}
                 </select>
               </div>
+
+              {staffDoctors.length > 0 && (
+                <div>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Doctor</label>
+                  <select className="nm-input" style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                    value={pastDoctorId} onChange={e => setPastDoctorId(e.target.value)}>
+                    <option value="">Myself</option>
+                    {staffDoctors.map(d => (
+                      <option key={d.id} value={d.id.toString()}>{d.name}{d.jobTitle ? ` — ${d.jobTitle}` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Mode</label>
