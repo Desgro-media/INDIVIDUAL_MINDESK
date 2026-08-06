@@ -111,6 +111,19 @@ export default function ServicesPage() {
 
   const pricingFor = (clinicServiceId: number) => myPricing.find(p => p.clinicServiceId === clinicServiceId);
 
+  // "Active" (below) only means the service TYPE exists in the catalog — a
+  // clinic account (unlike a solo practitioner) still needs an explicit
+  // price set in at least one mode before clients can actually book it, and
+  // that's easy to miss since both states render as similarly muted text.
+  // See the per-card fallback below for the exact same offered/price logic.
+  const unpricedActiveCount = services.filter(svc => {
+    if (!svc.active) return false;
+    const p = pricingFor(svc.id);
+    const offlineOn = p ? p.offlineOffered : true;
+    const onlineOn = p ? p.onlineOffered : false;
+    return !offlineOn && !onlineOn;
+  }).length;
+
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm());
@@ -231,6 +244,24 @@ export default function ServicesPage() {
         </button>
       </div>
 
+      {!loading && unpricedActiveCount > 0 && (
+        <div className="soft-card-2" style={{
+          borderRadius: 16, padding: "14px 18px", display: "flex", alignItems: "flex-start", gap: 12,
+          background: "var(--warning-bg)", border: "1px solid var(--warning-brd)",
+        }}>
+          <AlertCircle style={{ width: 18, height: 18, color: "var(--warning)", flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "var(--warning)" }}>
+              {unpricedActiveCount} service{unpricedActiveCount === 1 ? "" : "s"} not offered in any mode yet
+            </p>
+            <p style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
+              "Active" only means it's listed in your catalog — clients can't actually book a service until you set an
+              In-person or Online price for it. Click <strong>Edit</strong> on the card(s) marked below to turn it on.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Services Grid */}
       {loading ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
@@ -271,6 +302,7 @@ export default function ServicesPage() {
             const offlinePrice = p?.offlinePrice ?? svc.fee;
             const onlineOn = p ? p.onlineOffered : false;
             const onlinePrice = p?.onlinePrice ?? 0;
+            const isUnpriced = svc.active && !offlineOn && !onlineOn;
             return (
             <SpotlightDiv
               key={svc.id}
@@ -278,6 +310,7 @@ export default function ServicesPage() {
               style={{
                 padding: 22, position: "relative",
                 opacity: svc.active ? 1 : 0.55,
+                ...(isUnpriced ? { border: "1px solid var(--warning-brd)", boxShadow: "0 0 0 1px var(--warning-brd)" } : {}),
               }}
             >
               {/* Order badge */}
@@ -312,6 +345,16 @@ export default function ServicesPage() {
                 <p style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 14, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                   {svc.description}
                 </p>
+              )}
+
+              {isUnpriced && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 10,
+                  padding: "4px 10px", borderRadius: 50, fontSize: 10.5, fontWeight: 700,
+                  background: "var(--warning-bg)", color: "var(--warning)",
+                }}>
+                  <AlertCircle style={{ width: 11, height: 11 }} /> Needs pricing — not bookable yet
+                </div>
               )}
 
               {/* Mode pricing */}

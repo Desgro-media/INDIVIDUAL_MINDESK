@@ -528,6 +528,7 @@ public class AppointmentService {
         AppUser assignedDoctor = assignedDoctorId.equals(appointment.getPsychologistId())
                 ? owner : userRepository.findById(assignedDoctorId).orElse(null);
         String assignedDoctorName = assignedDoctor != null ? assignedDoctor.getName() : null;
+        String assignedDoctorJobTitle = assignedDoctor != null ? assignedDoctor.getJobTitle() : null;
 
         return AppointmentDto.builder()
                 .id(appointment.getId())
@@ -558,6 +559,7 @@ public class AppointmentService {
                 .psychologistSlug(psychologistSlug)
                 .assignedDoctorId(assignedDoctorId)
                 .assignedDoctorName(assignedDoctorName)
+                .assignedDoctorJobTitle(assignedDoctorJobTitle)
                 .build();
     }
 }

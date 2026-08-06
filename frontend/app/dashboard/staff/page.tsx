@@ -6,7 +6,7 @@ import {
   Plus, Pencil, X, Loader2, Check, UserCog,
   ShieldCheck, ShieldOff, RefreshCw, Brain, UserCheck,
   User, Lock, Mail, AlertCircle, CheckCircle2, LogIn, LogOut,
-  CalendarClock, DollarSign,
+  CalendarClock, DollarSign, AlertTriangle,
 } from "lucide-react";
 import { SpotlightDiv } from "../../../components/Spotlight";
 import {
@@ -14,6 +14,7 @@ import {
   deactivateStaff, reactivateStaff, getAllAttendance, getActiveStaff,
   StaffMember, AttendanceRecord, CreateStaffPayload,
 } from "../../../lib/staffApi";
+import { getMyServices } from "../../../lib/profileApi";
 import AvailabilityEditor from "../../../components/AvailabilityEditor";
 import StaffServicesEditor from "../../../components/StaffServicesEditor";
 
@@ -30,6 +31,18 @@ const ROLES = [
   { value: "ROLE_RECEPTIONIST", label: "Receptionist" },
   { value: "ROLE_PSYCHOLOGIST", label: "Psychologist" },
 ];
+
+// Common titles offered as a quick pick, keyed by role — the underlying
+// field stays free text (see the input next to the dropdown below), so
+// these are a starting point, not a closed list.
+const JOB_TITLE_PRESETS: Record<string, string[]> = {
+  ROLE_PSYCHOLOGIST: [
+    "Senior Psychologist", "Primary Psychologist", "Consultant Psychologist",
+    "Clinical Psychologist", "Associate Psychologist", "Counselling Psychologist",
+  ],
+  ROLE_RECEPTIONIST: ["Front Desk Executive", "Receptionist", "Office Coordinator"],
+  ROLE_STAFF: ["Office Manager", "Billing Coordinator", "Administrative Staff"],
+};
 
 function roleBadge(role: string) {
   const map: Record<string, { label: string; cls: string }> = {
@@ -66,6 +79,11 @@ export default function StaffPage() {
   const [savingPermsFor, setSavingPermsFor] = useState<number | null>(null);
   const [scheduleModalFor, setScheduleModalFor] = useState<StaffMember | null>(null);
   const [scheduleTab, setScheduleTab] = useState<"services" | "availability">("services");
+  // Whether each enabled psychologist has at least one priced/offered
+  // service — a clinic staff doctor starts with zero (unlike solo
+  // practitioners, who auto-offer the catalog), so this surfaces the
+  // "invisible on the booking page" trap instead of letting it happen silently.
+  const [servicesConfigured, setServicesConfigured] = useState<Record<number, boolean>>({});
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flash = (text: string, isError = false) => {
@@ -84,6 +102,22 @@ export default function StaffPage() {
       setLoading(false);
     }
   }, []);
+
+  const refreshServicesConfigured = useCallback(async (members: StaffMember[]) => {
+    const doctors = members.filter(m => m.role === "ROLE_PSYCHOLOGIST" && m.enabled);
+    if (doctors.length === 0) return;
+    const entries = await Promise.all(doctors.map(async d => {
+      try {
+        const services = await getMyServices(d.id);
+        return [d.id, services.some(s => s.onlineOffered || s.offlineOffered)] as const;
+      } catch {
+        return [d.id, true] as const; // fail open — don't warn off a fetch error
+      }
+    }));
+    setServicesConfigured(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+  }, []);
+
+  useEffect(() => { refreshServicesConfigured(staff); }, [staff, refreshServicesConfigured]);
 
   useEffect(() => { fetchStaff(); }, [fetchStaff]);
 
@@ -180,7 +214,7 @@ export default function StaffPage() {
         document.body
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-1)" }}>Staff Management</h1>
           <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 4 }}>
@@ -217,6 +251,7 @@ export default function StaffPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {psychologists.map(m => (
                   <StaffCard key={m.id} member={m} savingPerms={savingPermsFor === m.id}
+                    hasServicesConfigured={servicesConfigured[m.id]}
                     onTogglePermission={key => handleTogglePermission(m, key)}
                     onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
                     onManageSchedule={() => { setScheduleModalFor(m); setScheduleTab("services"); }}
@@ -288,8 +323,15 @@ export default function StaffPage() {
 
               <div>
                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>Job Title</label>
-                <input className="nm-input" placeholder="e.g. Clinical Psychologist, Front Desk"
-                  value={form.jobTitle} onChange={e => setForm(f => ({ ...f, jobTitle: e.target.value }))} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <select className="nm-input" style={{ maxWidth: 150, flexShrink: 0 }}
+                    value="" onChange={e => { if (e.target.value) setForm(f => ({ ...f, jobTitle: e.target.value })); }}>
+                    <option value="">Quick pick…</option>
+                    {(JOB_TITLE_PRESETS[form.role] ?? []).map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input className="nm-input" style={{ flex: 1 }} placeholder="e.g. Clinical Psychologist, Front Desk"
+                    value={form.jobTitle} onChange={e => setForm(f => ({ ...f, jobTitle: e.target.value }))} />
+                </div>
               </div>
 
               <div>
@@ -364,14 +406,14 @@ export default function StaffPage() {
 
       {scheduleModalFor && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }} onClick={() => setScheduleModalFor(null)} />
+          <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }} onClick={() => { setScheduleModalFor(null); refreshServicesConfigured(staff); }} />
           <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 620, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)" }}>
               <div>
                 <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-1)" }}>{scheduleModalFor.name}</h2>
                 <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>Services, pricing & availability</p>
               </div>
-              <button onClick={() => setScheduleModalFor(null)} className="icon-btn" style={{ width: 34, height: 34, borderRadius: "50%" }}>
+              <button onClick={() => { setScheduleModalFor(null); refreshServicesConfigured(staff); }} className="icon-btn" style={{ width: 34, height: 34, borderRadius: "50%" }}>
                 <X style={{ width: 14, height: 14 }} />
               </button>
             </div>
@@ -417,9 +459,10 @@ export default function StaffPage() {
 }
 
 // ── Staff card ────────────────────────────────────────────────────────────
-function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onReactivate, onManageSchedule, onRefresh, flash }: {
+function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermission, onDeactivate, onReactivate, onManageSchedule, onRefresh, flash }: {
   member: StaffMember;
   savingPerms: boolean;
+  hasServicesConfigured?: boolean;
   onTogglePermission: (key: string) => void;
   onDeactivate: () => void;
   onReactivate: () => void;
@@ -431,13 +474,16 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
   const [name, setName] = useState(member.name);
   const [role, setRole] = useState(member.role);
   const [jobTitle, setJobTitle] = useState(member.jobTitle ?? "");
+  const [bookable, setBookable] = useState(member.bookable);
   const [saving, setSaving] = useState(false);
   const isDoctor = member.role === "ROLE_PSYCHOLOGIST";
+  const isDoctorEditing = role === "ROLE_PSYCHOLOGIST";
 
   const openEdit = () => {
     setName(member.name);
     setRole(member.role);
     setJobTitle(member.jobTitle ?? "");
+    setBookable(member.bookable);
     setEditing(true);
   };
 
@@ -445,7 +491,7 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
     if (!name.trim()) { flash("Name cannot be empty.", true); return; }
     setSaving(true);
     try {
-      await updateStaff(member.id, { name: name.trim(), role, jobTitle: jobTitle.trim() });
+      await updateStaff(member.id, { name: name.trim(), role, jobTitle: jobTitle.trim(), bookable });
       flash("Staff details updated.");
       setEditing(false);
       onRefresh();
@@ -473,9 +519,21 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
                   className="nm-input" style={{ fontSize: 12, padding: "6px 10px" }}>
                   {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                 </select>
+                <select value="" onChange={e => { if (e.target.value) setJobTitle(e.target.value); }}
+                  className="nm-input" style={{ fontSize: 12, padding: "6px 10px", width: 110 }}>
+                  <option value="">Quick pick…</option>
+                  {(JOB_TITLE_PRESETS[role] ?? []).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
                 <input value={jobTitle} onChange={e => setJobTitle(e.target.value)}
                   placeholder="Job title"
                   className="nm-input" style={{ fontSize: 12, padding: "6px 10px", width: 160 }} />
+                {isDoctorEditing && (
+                  <button type="button" onClick={() => setBookable(b => !b)} className="btn-nm" style={{ padding: "6px 12px", fontSize: 11 }}
+                    title="Whether clients can book this practitioner on the public booking page">
+                    {bookable ? <ShieldCheck style={{ width: 12, height: 12 }} /> : <ShieldOff style={{ width: 12, height: 12 }} />}
+                    {bookable ? "Bookable" : "Not bookable"}
+                  </button>
+                )}
                 <button onClick={handleSave} disabled={saving} className="btn-nm-accent" style={{ padding: "6px 14px", fontSize: 11 }}>
                   {saving ? "…" : "Save"}
                 </button>
@@ -488,8 +546,17 @@ function StaffCard({ member, savingPerms, onTogglePermission, onDeactivate, onRe
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-1)" }}>{member.name}</p>
                   {roleBadge(member.role)}
-                  {isDoctor && member.bookable && (
+                  {isDoctor && (member.bookable ? (
                     <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border bg-green-50 text-green-700 border-green-200">Bookable</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200" title="Clients can't book this practitioner until Bookable is turned on">
+                      <AlertTriangle style={{ width: 10, height: 10 }} /> Not bookable — hidden from clients
+                    </span>
+                  ))}
+                  {isDoctor && member.enabled && hasServicesConfigured === false && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200" title="No service has a price set for this practitioner — the booking page will show an empty service list">
+                      <AlertTriangle style={{ width: 10, height: 10 }} /> No services priced yet
+                    </span>
                   )}
                   {!member.enabled && (
                     <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border bg-red-50 text-red-600 border-red-200">Deactivated</span>

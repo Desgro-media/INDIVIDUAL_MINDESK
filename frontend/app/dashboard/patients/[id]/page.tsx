@@ -9,7 +9,7 @@ import {
   Search, ArrowDownUp, AlertCircle, Phone, Mail, Check,
   Download, Plus, BrainCircuit, TrendingUp, Star,
   Lock, Pencil, Save, Trash2, DollarSign, Smile, X, RefreshCw,
-  Paperclip, Loader2, UploadCloud, Video, MapPin,
+  Paperclip, Loader2, UploadCloud, Video, MapPin, Stethoscope,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -191,6 +191,7 @@ type Appointment = {
   id: number; appointmentDate: string; startTime: string; endTime: string;
   status: string; sessionType?: string; mode?: string; notes?: string; cancellationReason?: string;
   rating?: number; feedback?: string;
+  assignedDoctorId?: number | null; assignedDoctorName?: string | null; assignedDoctorJobTitle?: string | null;
 };
 type SessionNote = { id: number; appointmentId: number; content?: string; subjective?: string; objective?: string; assessment?: string; plan?: string; updatedAt: string; };
 type Invoice     = { id: number; appointmentId: number; status: string; amount: number; discountAmount?: number; finalAmount?: number; discountReason?: string; paymentMethod?: string; toAccount?: string | null; bankAccountName?: string | null; };
@@ -259,6 +260,16 @@ export default function ClientTimelinePage() {
   const [loading, setLoading]           = useState(true);
   const themeMode = useThemeMode();
   const chartC = CHART[themeMode];
+
+  // Clinic staff (tenantId set) or a tenant root signed up as CLINIC — a
+  // solo practitioner already knows who "the doctor" is, so skip the badge.
+  const [isClinicContext, setIsClinicContext] = useState(false);
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      if (user) setIsClinicContext(!!user.tenantId || user.accountType === "CLINIC");
+    } catch { /* default to hidden if we can't tell */ }
+  }, []);
 
   // Timeline controls
   const [search, setSearch]       = useState("");
@@ -764,6 +775,17 @@ export default function ClientTimelinePage() {
     };
   }, [appointments]);
 
+  // The treating doctor, from this patient's most recent non-cancelled
+  // appointment — patients aren't assigned to one doctor directly (a
+  // clinic's patient records are shared tenant-wide), so an appointment's
+  // assignedDoctorId is the only place that relationship actually lives.
+  const patientDoctor = useMemo(() => {
+    const withDoctor = appointments
+      .filter(a => a.status !== "CANCELLED" && a.assignedDoctorName)
+      .sort((a, b) => (b.appointmentDate + b.startTime).localeCompare(a.appointmentDate + a.startTime));
+    return withDoctor[0] ?? null;
+  }, [appointments]);
+
   const aiSummaryText = useMemo(() => {
     if (!metrics || metrics.completed === 0) return "Not enough session data to generate a summary.";
     
@@ -995,6 +1017,16 @@ export default function ClientTimelinePage() {
                 <div className="soft-card-2" style={{ borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "var(--text-2)" }}>
                   <Mail style={{ width: 16, height: 16, color: "var(--accent)" }} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{patient.email}</span>
+                </div>
+              )}
+              {isClinicContext && (
+                <div className="soft-card-2" style={{ borderRadius: 14, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: "var(--text-2)" }}>
+                  <Stethoscope style={{ width: 16, height: 16, color: "var(--accent)" }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {patientDoctor
+                      ? `${patientDoctor.assignedDoctorName}${patientDoctor.assignedDoctorJobTitle ? ` · ${patientDoctor.assignedDoctorJobTitle}` : ""}`
+                      : "No doctor assigned yet"}
+                  </span>
                 </div>
               )}
 
