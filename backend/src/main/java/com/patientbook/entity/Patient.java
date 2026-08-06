@@ -55,6 +55,17 @@ public class Patient {
     @Column(name = "primary_psychologist_id", nullable = false)
     private Long primaryPsychologistId;
 
+    // Which specific practitioner is treating this patient — distinct from
+    // primaryPsychologistId above, which is the whole TENANT's id (shared by
+    // every patient in a clinic, not per-doctor). Null means unassigned —
+    // e.g. a patient created before this field existed, or one whose
+    // treating doctor is only implied by their appointment history so far.
+    // Always validated through StaffResolutionService before being set (see
+    // PatientService.createPatient), never trusted directly from client
+    // input, same as Appointment.assignedDoctorId.
+    @Column(name = "assigned_doctor_id")
+    private Long assignedDoctorId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

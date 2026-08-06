@@ -187,7 +187,10 @@ function MiniCalendar({ value, onChange, maxDate }: {
   );
 }
 
-type Patient = { id: number; name: string; email: string; phone: string; createdAt: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string; };
+type Patient = {
+  id: number; name: string; email: string; phone: string; createdAt: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string;
+  assignedDoctorId?: number | null;
+};
 type Appointment = {
   id: number; appointmentDate: string; startTime: string; endTime: string;
   status: string; sessionType?: string; mode?: string; notes?: string; cancellationReason?: string;
@@ -265,10 +268,17 @@ export default function ClientTimelinePage() {
   // Clinic staff (tenantId set) or a tenant root signed up as CLINIC — a
   // solo practitioner already knows who "the doctor" is, so skip the badge.
   const [isClinicContext, setIsClinicContext] = useState(false);
+  // The logged-in user's own id/name — staffDoctors below only ever lists
+  // OTHER staff, never the caller's own row, so resolving "this patient's
+  // assigned doctor is me" needs this separately.
+  const [ownUser, setOwnUser] = useState<{ id: number; name: string; jobTitle: string | null } | null>(null);
   useEffect(() => {
     try {
       const user = JSON.parse(localStorage.getItem("user") || "null");
-      if (user) setIsClinicContext(!!user.tenantId || user.accountType === "CLINIC");
+      if (user) {
+        setIsClinicContext(!!user.tenantId || user.accountType === "CLINIC");
+        setOwnUser({ id: user.id, name: user.name || user.username, jobTitle: user.jobTitle ?? null });
+      }
     } catch { /* default to hidden if we can't tell */ }
   }, []);
 
@@ -799,16 +809,23 @@ export default function ClientTimelinePage() {
     };
   }, [appointments]);
 
-  // The treating doctor, from this patient's most recent non-cancelled
-  // appointment — patients aren't assigned to one doctor directly (a
-  // clinic's patient records are shared tenant-wide), so an appointment's
-  // assignedDoctorId is the only place that relationship actually lives.
-  const patientDoctor = useMemo(() => {
+  // The treating doctor. Prefers the patient's explicit assignedDoctorId
+  // (set at creation, or defaulted there — see the patients list page);
+  // falls back to the most recent non-cancelled appointment's assigned
+  // doctor for patients created before that field existed, where the
+  // relationship only lives on the appointment.
+  const patientDoctor = useMemo((): { name: string; jobTitle: string | null } | null => {
+    if (patient?.assignedDoctorId != null) {
+      if (ownUser && patient.assignedDoctorId === ownUser.id) return ownUser;
+      const s = staffDoctors.find(d => d.id === patient.assignedDoctorId);
+      if (s) return s;
+    }
     const withDoctor = appointments
       .filter(a => a.status !== "CANCELLED" && a.assignedDoctorName)
       .sort((a, b) => (b.appointmentDate + b.startTime).localeCompare(a.appointmentDate + a.startTime));
-    return withDoctor[0] ?? null;
-  }, [appointments]);
+    const latest = withDoctor[0];
+    return latest ? { name: latest.assignedDoctorName!, jobTitle: latest.assignedDoctorJobTitle ?? null } : null;
+  }, [patient, ownUser, staffDoctors, appointments]);
 
   const aiSummaryText = useMemo(() => {
     if (!metrics || metrics.completed === 0) return "Not enough session data to generate a summary.";
@@ -1027,9 +1044,9 @@ export default function ClientTimelinePage() {
             <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 16, fontFamily: "monospace" }}>ID: {patient.id.toString().padStart(5, "0")}</p>
 
             <button onClick={() => { setEditPatientForm({ name: patient.name, email: patient.email || "", phone: patient.phone || "" }); setEditPatientOpen(true); }}
-              className="btn-nm"
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", cursor: "pointer", color: "var(--accent)", fontWeight: 600, fontSize: 12, marginBottom: 16 }}>
-              <Pencil style={{ width: 12, height: 12 }} /> Edit Details
+              className="icon-btn" title="Edit Details"
+              style={{ width: 34, height: 34, borderRadius: "50%", color: "var(--accent)", marginBottom: 16 }}>
+              <Pencil style={{ width: 14, height: 14 }} />
             </button>
 
             <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1048,7 +1065,7 @@ export default function ClientTimelinePage() {
                   <Stethoscope style={{ width: 16, height: 16, color: "var(--accent)" }} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
                     {patientDoctor
-                      ? `${patientDoctor.assignedDoctorName}${patientDoctor.assignedDoctorJobTitle ? ` · ${patientDoctor.assignedDoctorJobTitle}` : ""}`
+                      ? `${patientDoctor.name}${patientDoctor.jobTitle ? ` · ${patientDoctor.jobTitle}` : ""}`
                       : "No doctor assigned yet"}
                   </span>
                 </div>
