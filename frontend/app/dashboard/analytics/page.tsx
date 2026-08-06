@@ -2,9 +2,9 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import {
-  BarChart as BarChartIcon, Users, Calendar,
+  BarChart as BarChartIcon, Calendar,
   Clock, AlertCircle, PieChart as PieChartIcon, Repeat,
-  ArrowRight, ArrowUpRight, Download, TrendingUp, Activity, Hourglass,
+  ArrowRight, Download, TrendingUp,
 } from "lucide-react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -13,8 +13,8 @@ import {
 import api from "../../../lib/api";
 import Link from "next/link";
 import MonthFilter, { monthKey, monthLabel } from "../../../components/MonthFilter";
-import { CHART, useThemeMode, useCountUp, SeriesTooltip, SliceTooltip } from "../../../lib/chartTheme";
-import { SpotlightDiv, SpotlightLink } from "../../../components/Spotlight";
+import { CHART, useThemeMode, SeriesTooltip, SliceTooltip } from "../../../lib/chartTheme";
+import { SpotlightDiv } from "../../../components/Spotlight";
 
 type Appointment = {
   id: number;
@@ -353,19 +353,9 @@ export default function AnalyticsPage() {
     return { total, peak, avg };
   }, [chartData.trend]);
 
-  const animatedPatients  = useCountUp(patients.length, !loading);
-  const animatedAwaiting  = useCountUp(metrics?.awaitingPayment ?? 0, !loading);
-
   if (loading || !metrics) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div className="ov-hero">
-          <div className="soft-card skel" style={{ height: 280 }} />
-          <div className="ov-stack">
-            <div className="soft-card skel" style={{ flex: 1, minHeight: 128 }} />
-            <div className="soft-card skel" style={{ flex: 1, minHeight: 128 }} />
-          </div>
-        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
           {[0, 1].map(i => (
             <div key={i} className="soft-card" style={{ padding: 24 }}>
@@ -472,102 +462,6 @@ export default function AnalyticsPage() {
           <button onClick={handleExport} className="btn-nm" style={{ padding: "10px 18px" }}>
             <Download style={{ width: 14, height: 14, color: "var(--accent)" }} /> Export Report
           </button>
-        </div>
-      </div>
-
-      {/* ── Hero: Booking Trend + stat tiles (mirrors the Overview page's
-          hero card — see frontend/app/dashboard/page.tsx) ─────────────── */}
-      <div className="ov-hero">
-        <SpotlightDiv className="grad-card grad-card--1 card-hover anim-fade-up d1">
-          <span className="grad-card-mesh" aria-hidden="true" />
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 4 }}>
-            <div>
-              <p style={{ fontSize: 11, fontWeight: 700, opacity: 0.85, textTransform: "uppercase", letterSpacing: "0.08em" }}>Analytics</p>
-              <h3 style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>Booking Trend</h3>
-            </div>
-            <div className="stat-bubble">
-              <span className="stat-bubble-dot"><Activity /></span>
-              <div>
-                <p style={{ fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{trendStats.peak}</p>
-                <p style={{ fontSize: 9, opacity: 0.85, marginTop: 1 }}>peak day</p>
-              </div>
-            </div>
-          </div>
-          {chartData.trend.length === 0 ? (
-            <div style={{ height: 210, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)" }}>No booking data yet.</p>
-            </div>
-          ) : (
-            <div style={{ height: 210, minWidth: 0, marginTop: 8 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData.trend} margin={{ top: 16, right: 4, left: 4, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="analyticsTrendFillOnGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"  stopColor="#ffffff" stopOpacity={0.50} />
-                      <stop offset="55%" stopColor="#ffffff" stopOpacity={0.16} />
-                      <stop offset="100%" stopColor="#ffffff" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fill: "rgba(255,255,255,0.68)", fontSize: 10.5 }}
-                    axisLine={false} tickLine={false}
-                    interval="preserveStartEnd" minTickGap={28}
-                  />
-                  <YAxis hide domain={[0, (max: number) => Math.max(max * 1.25, 4)]} />
-                  <Tooltip
-                    content={<SeriesTooltip mode={mode} unit="booking" />}
-                    cursor={{ stroke: "rgba(255,255,255,0.35)", strokeWidth: 1 }}
-                  />
-                  <Area
-                    type="monotone" dataKey="bookings"
-                    stroke="#ffffff" strokeWidth={2.25}
-                    fill="url(#analyticsTrendFillOnGrad)"
-                    dot={false}
-                    activeDot={{ r: 4.5, fill: "#ffffff", stroke: "var(--grad-1-to)", strokeWidth: 2 }}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-            <span style={{ fontSize: 11, opacity: 0.85 }}>{monthFilter ? monthLabel(monthFilter) : "Last 14 days"}</span>
-            <span className="stat-chip stat-chip--on-grad">{trendStats.total} booked</span>
-          </div>
-        </SpotlightDiv>
-
-        {/* Stacked accent tiles */}
-        <div className="ov-stack">
-          <SpotlightLink href="/dashboard/patients" className="grad-card grad-card--1 card-hover anim-fade-up d2">
-            <span className="grad-card-mesh" aria-hidden="true" />
-            <span className="grad-card-watermark" aria-hidden="true" style={{ width: 96, height: 96, right: -18, bottom: -20, transform: "rotate(-14deg)" }}>
-              <Users />
-            </span>
-            <div className="icon-badge icon-badge--on-grad"><Users /></div>
-            <p style={{ fontSize: 11, fontWeight: 600, opacity: 0.85, marginTop: 14 }}>Total Patients</p>
-            <p style={{ fontSize: 28, fontWeight: 800, marginTop: 2, lineHeight: 1 }}>{animatedPatients}</p>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 14 }}>
-              <span style={{ fontSize: 11, opacity: 0.85 }}>Registered</span>
-              <span className="circle-icon-btn"><ArrowUpRight /></span>
-            </div>
-          </SpotlightLink>
-
-          <SpotlightLink href="/dashboard/appointments" className="grad-card grad-card--2 card-hover anim-fade-up d3">
-            <span className="grad-card-mesh" aria-hidden="true" />
-            <span className="grad-card-watermark" aria-hidden="true" style={{ width: 92, height: 92, right: -16, bottom: -18, transform: "rotate(10deg)" }}>
-              <Hourglass />
-            </span>
-            <div className="icon-badge icon-badge--on-grad"><Hourglass /></div>
-            <p style={{ fontSize: 11, fontWeight: 600, opacity: 0.85, marginTop: 14 }}>Awaiting Payment</p>
-            <p style={{ fontSize: 28, fontWeight: 800, marginTop: 2, lineHeight: 1 }}>{animatedAwaiting}</p>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 14 }}>
-              <span style={{ fontSize: 11, opacity: 0.85 }}>
-                {metrics.awaitingPayment > 0 ? `${metrics.awaitingPayment} pending` : "None pending"}
-              </span>
-              <span className="circle-icon-btn"><ArrowUpRight /></span>
-            </div>
-          </SpotlightLink>
         </div>
       </div>
 

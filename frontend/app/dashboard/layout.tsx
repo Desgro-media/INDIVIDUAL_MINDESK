@@ -191,7 +191,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ).length;
           setPending(count);
         })
-        .catch(() => {});
+        .catch(err => console.error("Failed to refresh pending-payment count:", err));
     };
     fetchPending();
     const interval = setInterval(fetchPending, 30000);
@@ -431,7 +431,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <ThemeToggle />
 
-            {pendingCount > 0 && (
+            {/* Always rendered for anyone who can see Appointments at all — a
+                bell that only exists once something is pending used to
+                vanish entirely at zero, which read as "notifications are
+                broken" rather than "nothing pending right now." The badge
+                is still the only part that's conditional. */}
+            {hasPermission("APPOINTMENTS") && (
               <Link href="/dashboard/appointments" style={{ position: "relative", display: "flex", textDecoration: "none" }}>
                 <div style={{
                   width: 38, height: 38, borderRadius: "50%",
@@ -441,18 +446,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   border: "1px solid var(--glass-border-dim)",
                   boxShadow: "0 2px 10px var(--glass-shadow)",
                 }}>
-                  <Bell style={{ width: 16, height: 16, color: "var(--accent)" }} />
+                  <Bell style={{ width: 16, height: 16, color: pendingCount > 0 ? "var(--accent)" : "var(--text-3)" }} />
                 </div>
-                <span className="badge-pop" style={{
-                  position: "absolute", top: 0, right: 0,
-                  width: 16, height: 16, borderRadius: "50%",
-                  background: "var(--warning)",
-                  color: "#1a1a1a", fontSize: 9, fontWeight: 700,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 2px 6px rgba(245,158,11,0.4)",
-                }}>
-                  {pendingCount > 9 ? "9+" : pendingCount}
-                </span>
+                {pendingCount > 0 && (
+                  <span className="badge-pop" style={{
+                    position: "absolute", top: 0, right: 0,
+                    width: 16, height: 16, borderRadius: "50%",
+                    background: "var(--warning)",
+                    color: "#1a1a1a", fontSize: 9, fontWeight: 700,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 2px 6px rgba(245,158,11,0.4)",
+                  }}>
+                    {pendingCount > 9 ? "9+" : pendingCount}
+                  </span>
+                )}
               </Link>
             )}
 

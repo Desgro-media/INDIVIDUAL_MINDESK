@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo, Suspense } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Users, Search, Phone, Mail, X, UserCircle2, UserPlus } from "lucide-react";
+import { Users, Search, Phone, Mail, X, UserCircle2, UserPlus, Stethoscope } from "lucide-react";
 import api from "../../../lib/api";
 import { SpotlightLink } from "../../../components/Spotlight";
 
@@ -13,6 +13,7 @@ type Appointment = {
   id: number; patientId?: number | null; patientName: string; patientEmail: string;
   appointmentDate: string; startTime: string; endTime: string;
   status: string; sessionType?: string; notes?: string; cancellationReason?: string;
+  assignedDoctorId?: number | null; assignedDoctorName?: string | null; assignedDoctorJobTitle?: string | null;
 };
 
 const EMPTY_FORM = { name: "", email: "", phone: "" };
@@ -30,6 +31,18 @@ function PatientsView() {
   const [form, setForm]           = useState(EMPTY_FORM);
   const [saving, setSaving]       = useState(false);
   const [formError, setFormError] = useState("");
+  // A clinic staff row (tenantId set) is always clinic context; a tenant
+  // root is clinic context only if they signed up as CLINIC — a solo
+  // practitioner already knows who "the doctor" is, so the badge would
+  // just be noise for them.
+  const [isClinicContext, setIsClinicContext] = useState(false);
+
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      if (user) setIsClinicContext(!!user.tenantId || user.accountType === "CLINIC");
+    } catch { /* default to hidden if we can't tell */ }
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -58,6 +71,17 @@ function PatientsView() {
       completed: apts.filter(a => a.status === "COMPLETED").length,
       pending:   apts.filter(a => a.status === "AWAITING_PAYMENT" || a.status === "PAYMENT_UNDER_REVIEW").length,
     };
+  };
+
+  // The treating doctor, from this patient's most recent non-cancelled
+  // appointment — patients aren't assigned to one doctor directly (a
+  // clinic's patient records are shared tenant-wide), so an appointment's
+  // assignedDoctorId is the only place that relationship actually lives.
+  const getPatientDoctor = (patientId: number) => {
+    const apts = appointments
+      .filter(a => a.patientId === patientId && a.status !== "CANCELLED" && a.assignedDoctorName)
+      .sort((a, b) => (b.appointmentDate + b.startTime).localeCompare(a.appointmentDate + a.startTime));
+    return apts[0] ?? null;
   };
 
   const openModal = () => {
@@ -232,6 +256,19 @@ function PatientsView() {
                     <Phone style={{ width: 12, height: 12, color: "var(--accent)", flexShrink: 0 }} />
                     <span>{patient.phone || "—"}</span>
                   </div>
+                  {isClinicContext && (() => {
+                    const doctorApt = getPatientDoctor(patient.id);
+                    return (
+                      <div className="soft-card-2" style={{ borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-2)" }}>
+                        <Stethoscope style={{ width: 12, height: 12, color: "var(--accent)", flexShrink: 0 }} />
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {doctorApt
+                            ? `${doctorApt.assignedDoctorName}${doctorApt.assignedDoctorJobTitle ? ` · ${doctorApt.assignedDoctorJobTitle}` : ""}`
+                            : "No doctor assigned yet"}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, paddingTop: 14, borderTop: "1px solid var(--card-border)" }}>
