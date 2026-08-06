@@ -10,9 +10,12 @@ import api from './api';
 
 // mode is optional — omit it for the mode-agnostic manual-scheduling flows
 // that haven't been updated to collect it yet; the backend defaults to
-// OFFLINE server-side.
-export const getMySlots = async (date: string, mode?: 'ONLINE' | 'OFFLINE'): Promise<string[]> => {
-    const res = await api.get(`/me/slots?date=${date}${mode ? `&mode=${mode}` : ''}`);
+// OFFLINE server-side. staffId is optional like the rest of this file — pass
+// a clinic owner's chosen staff member's id to read THEIR calendar instead
+// of the caller's own (see StaffAvailabilityController.getStaffSlots).
+export const getMySlots = async (date: string, mode?: 'ONLINE' | 'OFFLINE', staffId?: number): Promise<string[]> => {
+    const qs = `date=${date}${mode ? `&mode=${mode}` : ''}`;
+    const res = await api.get(staffId ? `/staff/${staffId}/slots?${qs}` : `/me/slots?${qs}`);
     return res.data;
 };
 
