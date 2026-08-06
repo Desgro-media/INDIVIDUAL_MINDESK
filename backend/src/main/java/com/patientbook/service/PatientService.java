@@ -28,6 +28,7 @@ public class PatientService {
     private final SessionNoteRepository sessionNoteRepository;
     private final NotificationLogRepository notificationLogRepository;
     private final PatientAttachmentRepository patientAttachmentRepository;
+    private final StaffResolutionService staffResolutionService;
 
     public List<Patient> getAllPatients(Long ownerId) {
         return patientRepository.findByPrimaryPsychologistId(ownerId);
@@ -38,6 +39,16 @@ public class PatientService {
         if (patient.getRiskFlag() == null) patient.setRiskFlag(false);
         if (patient.getSource() == null || patient.getSource().isBlank()) patient.setSource("Direct");
         patient.setPrimaryPsychologistId(ownerId);
+        // Never trust a client-supplied doctor id directly — re-resolve it
+        // through the same tenant/role-validated path appointment
+        // scheduling uses (see StaffResolutionService), so a patient can
+        // never end up "assigned" to a practitioner outside this tenant or
+        // to a non-psychologist row. Left null (unassigned) if omitted —
+        // this is optional metadata, not a required booking.
+        if (patient.getAssignedDoctorId() != null) {
+            patient.setAssignedDoctorId(
+                    staffResolutionService.resolveTenantStaffId(ownerId, ownerId, patient.getAssignedDoctorId()));
+        }
         return patientRepository.save(patient);
     }
 

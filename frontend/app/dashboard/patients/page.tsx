@@ -8,15 +8,19 @@ import { Users, Search, Phone, Mail, X, UserCircle2, UserPlus, Stethoscope } fro
 import api from "../../../lib/api";
 import { SpotlightLink } from "../../../components/Spotlight";
 
-type Patient = { id: number; name: string; email: string; phone: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string; };
+type Patient = {
+  id: number; name: string; email: string; phone: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string;
+  assignedDoctorId?: number | null;
+};
 type Appointment = {
   id: number; patientId?: number | null; patientName: string; patientEmail: string;
   appointmentDate: string; startTime: string; endTime: string;
   status: string; sessionType?: string; notes?: string; cancellationReason?: string;
   assignedDoctorId?: number | null; assignedDoctorName?: string | null; assignedDoctorJobTitle?: string | null;
 };
+type StaffDoctor = { id: number; name: string; jobTitle: string | null };
 
-const EMPTY_FORM = { name: "", email: "", phone: "" };
+const EMPTY_FORM = { name: "", email: "", phone: "", doctorId: "" };
 
 function PatientsView() {
   const searchParams = useSearchParams();
@@ -36,12 +40,31 @@ function PatientsView() {
   // practitioner already knows who "the doctor" is, so the badge would
   // just be noise for them.
   const [isClinicContext, setIsClinicContext] = useState(false);
+  // The logged-in user's own id/name — needed to resolve "Myself" in the
+  // doctor picker/badge without a round-trip, and because staffDoctors
+  // below only ever lists OTHER staff, never the caller's own row.
+  const [ownUser, setOwnUser] = useState<StaffDoctor | null>(null);
 
   useEffect(() => {
     try {
       const user = JSON.parse(localStorage.getItem("user") || "null");
-      if (user) setIsClinicContext(!!user.tenantId || user.accountType === "CLINIC");
+      if (user) {
+        setIsClinicContext(!!user.tenantId || user.accountType === "CLINIC");
+        setOwnUser({ id: user.id, name: user.name || user.username, jobTitle: user.jobTitle ?? null });
+      }
     } catch { /* default to hidden if we can't tell */ }
+  }, []);
+
+  // Roster of bookable psychologists in this clinic, for the doctor picker
+  // on the Add Patient modal below. GET /staff only succeeds for a clinic
+  // OWNER — it 403s for staff logins and individual practitioners, both of
+  // whom don't need a picker anyway, so a rejection here just leaves it
+  // empty and hidden, same as every other optional block on this page.
+  const [staffDoctors, setStaffDoctors] = useState<StaffDoctor[]>([]);
+  useEffect(() => {
+    api.get("/staff")
+      .then(r => setStaffDoctors((r.data ?? []).filter((s: any) => s.role === "ROLE_PSYCHOLOGIST" && s.enabled)))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -73,19 +96,36 @@ function PatientsView() {
     };
   };
 
-  // The treating doctor, from this patient's most recent non-cancelled
-  // appointment — patients aren't assigned to one doctor directly (a
-  // clinic's patient records are shared tenant-wide), so an appointment's
-  // assignedDoctorId is the only place that relationship actually lives.
-  const getPatientDoctor = (patientId: number) => {
+  // Resolves a doctor id (from Patient.assignedDoctorId or an appointment)
+  // into a display label — staffDoctors only ever lists OTHER staff, so the
+  // owner's own id has to be checked separately via ownUser.
+  const resolveDoctorLabel = (doctorId?: number | null): { name: string; jobTitle: string | null } | null => {
+    if (doctorId == null) return null;
+    if (ownUser && doctorId === ownUser.id) return ownUser;
+    const s = staffDoctors.find(d => d.id === doctorId);
+    return s ?? null;
+  };
+
+  // The treating doctor for a patient card. Prefers the explicit
+  // assignment made at (or after) patient creation; falls back to the most
+  // recent non-cancelled appointment's assigned doctor for patients created
+  // before that field existed, where the relationship only lives on the
+  // appointment.
+  const getPatientDoctor = (patient: Patient): { name: string; jobTitle: string | null } | null => {
+    const direct = resolveDoctorLabel(patient.assignedDoctorId);
+    if (direct) return direct;
     const apts = appointments
-      .filter(a => a.patientId === patientId && a.status !== "CANCELLED" && a.assignedDoctorName)
+      .filter(a => a.patientId === patient.id && a.status !== "CANCELLED" && a.assignedDoctorName)
       .sort((a, b) => (b.appointmentDate + b.startTime).localeCompare(a.appointmentDate + a.startTime));
-    return apts[0] ?? null;
+    const latest = apts[0];
+    return latest ? { name: latest.assignedDoctorName!, jobTitle: latest.assignedDoctorJobTitle ?? null } : null;
   };
 
   const openModal = () => {
-    setForm(EMPTY_FORM);
+    // Defaults to the caller themselves in a clinic — always an explicit,
+    // valid choice, never left ambiguous — but stays blank (no picker at
+    // all) for a solo practitioner, who has no one else to assign to.
+    setForm({ ...EMPTY_FORM, doctorId: ownUser ? String(ownUser.id) : "" });
     setFormError("");
     setShowModal(true);
   };
@@ -99,7 +139,10 @@ function PatientsView() {
     }
     setSaving(true);
     try {
-      await api.post("/patients", { name: form.name, email: form.email, phone: form.phone });
+      await api.post("/patients", {
+        name: form.name, email: form.email, phone: form.phone,
+        assignedDoctorId: form.doctorId ? Number(form.doctorId) : undefined,
+      });
       const pRes = await api.get("/patients");
       setPatients(pRes.data);
       closeModal();
@@ -147,6 +190,25 @@ function PatientsView() {
                   />
                 </div>
               ))}
+
+              {staffDoctors.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                    Doctor
+                  </label>
+                  <select
+                    className="nm-input"
+                    value={form.doctorId}
+                    onChange={e => setForm(prev => ({ ...prev, doctorId: e.target.value }))}
+                    style={{ borderRadius: 12 }}
+                  >
+                    {ownUser && <option value={ownUser.id}>Myself{ownUser.jobTitle ? ` — ${ownUser.jobTitle}` : ""}</option>}
+                    {staffDoctors.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}{d.jobTitle ? ` — ${d.jobTitle}` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
@@ -257,13 +319,13 @@ function PatientsView() {
                     <span>{patient.phone || "—"}</span>
                   </div>
                   {isClinicContext && (() => {
-                    const doctorApt = getPatientDoctor(patient.id);
+                    const doctor = getPatientDoctor(patient);
                     return (
                       <div className="soft-card-2" style={{ borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-2)" }}>
                         <Stethoscope style={{ width: 12, height: 12, color: "var(--accent)", flexShrink: 0 }} />
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {doctorApt
-                            ? `${doctorApt.assignedDoctorName}${doctorApt.assignedDoctorJobTitle ? ` · ${doctorApt.assignedDoctorJobTitle}` : ""}`
+                          {doctor
+                            ? `${doctor.name}${doctor.jobTitle ? ` · ${doctor.jobTitle}` : ""}`
                             : "No doctor assigned yet"}
                         </span>
                       </div>
