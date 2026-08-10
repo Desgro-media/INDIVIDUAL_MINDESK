@@ -6,7 +6,7 @@ import {
   Plus, Pencil, X, Loader2, Check, UserCog,
   ShieldCheck, ShieldOff, RefreshCw, Brain, UserCheck,
   User, Lock, Mail, AlertCircle, CheckCircle2, LogIn, LogOut,
-  CalendarClock, DollarSign, AlertTriangle,
+  CalendarClock, DollarSign, AlertTriangle, Camera,
 } from "lucide-react";
 import { SpotlightDiv } from "../../../components/Spotlight";
 import {
@@ -15,6 +15,7 @@ import {
   StaffMember, AttendanceRecord, CreateStaffPayload,
 } from "../../../lib/staffApi";
 import { getMyServices } from "../../../lib/profileApi";
+import { readImageAsCompressedBase64 } from "../../../lib/imageUtils";
 import AvailabilityEditor from "../../../components/AvailabilityEditor";
 import StaffServicesEditor from "../../../components/StaffServicesEditor";
 
@@ -65,7 +66,75 @@ function formatDuration(minutes: number | null): string {
 const emptyForm = (): CreateStaffPayload => ({
   name: "", username: "", password: "", jobTitle: "",
   role: "ROLE_STAFF", permissions: [], bio: "", bookable: false,
+  profileImageUrl: "",
 });
+
+// Avatar that doubles as a photo picker when `onChange` is passed. The photo
+// is a compressed base64 data URL held on the staff row itself
+// (AppUser.profileImageUrl) — same convention as the owner's own photo in
+// settings/page.tsx. Falls back to the member's initial, then to a generic
+// icon while a new staff member is still unnamed.
+function StaffAvatar({ name, photo, size = 42, onChange, onError }: {
+  name: string;
+  photo: string;
+  size?: number;
+  onChange?: (dataUrl: string) => void;
+  onError?: (message: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const editable = !!onChange;
+  const initial = name.trim().charAt(0).toUpperCase();
+
+  const handlePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // lets the same file be re-picked after a failure
+    if (!file) return;
+    try {
+      onChange?.(await readImageAsCompressedBase64(file));
+    } catch (err: any) {
+      onError?.(err?.message || "Failed to process image.");
+    }
+  };
+
+  const badge = (extra: React.CSSProperties): React.CSSProperties => ({
+    position: "absolute", width: 20, height: 20, borderRadius: "50%",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    border: "2px solid var(--card)", cursor: "pointer", padding: 0, ...extra,
+  });
+
+  return (
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      <div className="team-avatar"
+        onClick={editable ? () => inputRef.current?.click() : undefined}
+        title={editable ? (photo ? "Change photo" : "Upload photo") : undefined}
+        style={{
+          width: size, height: size, borderRadius: "50%",
+          fontSize: Math.round(size * 0.38), cursor: editable ? "pointer" : undefined,
+        }}>
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photo} alt={name || "Staff photo"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : initial ? initial : <User style={{ width: size * 0.4, height: size * 0.4 }} />}
+      </div>
+      {editable && (
+        <>
+          <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePick} />
+          <button type="button" onClick={() => inputRef.current?.click()}
+            title={photo ? "Change photo" : "Upload photo"}
+            style={badge({ bottom: -2, right: -2, background: "var(--accent)" })}>
+            <Camera style={{ width: 10, height: 10, color: "#fff" }} />
+          </button>
+          {photo && (
+            <button type="button" onClick={() => onChange?.("")} title="Remove photo"
+              style={badge({ top: -2, right: -2, background: "var(--danger)" })}>
+              <X style={{ width: 10, height: 10, color: "#fff" }} strokeWidth={3} />
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -313,6 +382,19 @@ export default function StaffPage() {
               </div>
 
               <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>Photo</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <StaffAvatar name={form.name} photo={form.profileImageUrl ?? ""} size={64}
+                    onChange={url => setForm(f => ({ ...f, profileImageUrl: url }))}
+                    onError={msg => setFormError(msg)} />
+                  <p style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5 }}>
+                    Optional. JPG, PNG or WebP — resized automatically.<br />
+                    {form.role === "ROLE_PSYCHOLOGIST" && "Shown to clients on your public booking page."}
+                  </p>
+                </div>
+              </div>
+
+              <div>
                 <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>Full Name</label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2" style={{ width: 14, height: 14, color: "var(--text-3)" }} />
@@ -475,6 +557,7 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
   const [role, setRole] = useState(member.role);
   const [jobTitle, setJobTitle] = useState(member.jobTitle ?? "");
   const [bookable, setBookable] = useState(member.bookable);
+  const [photo, setPhoto] = useState(member.profileImageUrl ?? "");
   const [saving, setSaving] = useState(false);
   const isDoctor = member.role === "ROLE_PSYCHOLOGIST";
   const isDoctorEditing = role === "ROLE_PSYCHOLOGIST";
@@ -484,6 +567,7 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
     setRole(member.role);
     setJobTitle(member.jobTitle ?? "");
     setBookable(member.bookable);
+    setPhoto(member.profileImageUrl ?? "");
     setEditing(true);
   };
 
@@ -491,7 +575,9 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
     if (!name.trim()) { flash("Name cannot be empty.", true); return; }
     setSaving(true);
     try {
-      await updateStaff(member.id, { name: name.trim(), role, jobTitle: jobTitle.trim(), bookable });
+      // "" is meaningful here — it clears an existing photo server-side
+      // (StaffService.updateStaff only skips fields sent as null).
+      await updateStaff(member.id, { name: name.trim(), role, jobTitle: jobTitle.trim(), bookable, profileImageUrl: photo });
       flash("Staff details updated.");
       setEditing(false);
       onRefresh();
@@ -506,9 +592,10 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
     <SpotlightDiv className="soft-card p-5" style={{ opacity: member.enabled ? 1 : 0.6 }}>
       <div className="flex justify-between items-start" style={{ marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div className="flex items-center gap-3">
-          <div className="team-avatar" style={{ width: 42, height: 42, borderRadius: "50%", fontSize: 16 }}>
-            {member.name.charAt(0).toUpperCase()}
-          </div>
+          <StaffAvatar name={member.name} photo={editing ? photo : (member.profileImageUrl ?? "")}
+            size={editing ? 52 : 42}
+            onChange={editing ? setPhoto : undefined}
+            onError={msg => flash(msg, true)} />
           <div>
             {editing ? (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
