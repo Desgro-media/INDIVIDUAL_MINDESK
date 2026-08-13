@@ -3,11 +3,13 @@ package com.patientbook.controller;
 import com.patientbook.dto.ClinicServiceDto;
 import com.patientbook.entity.ClinicService;
 import com.patientbook.repository.ClinicServiceRepository;
+import com.patientbook.repository.DoctorServicePriceRepository;
 import com.patientbook.security.CurrentUserProvider;
 import com.patientbook.service.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,6 +23,7 @@ import java.util.stream.Collectors;
 public class ClinicServiceController {
 
     private final ClinicServiceRepository serviceRepo;
+    private final DoctorServicePriceRepository servicePriceRepo;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
@@ -63,9 +66,14 @@ public class ClinicServiceController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
+    @Transactional
     public ResponseEntity<Void> deleteService(@PathVariable Long id) {
         ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + id));
+        // Per-doctor pricing rows FK-block the delete once anyone has priced
+        // this service — clear them first. Booking history is unaffected:
+        // Appointment stores the service as free text, not a FK.
+        servicePriceRepo.deleteByClinicServiceId(svc.getId());
         serviceRepo.delete(svc);
         return ResponseEntity.noContent().build();
     }
