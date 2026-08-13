@@ -2,6 +2,7 @@ package com.patientbook.controller;
 
 import com.patientbook.service.ResourceNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +43,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleOptimisticLock(OptimisticLockingFailureException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("message", "This record was just updated elsewhere. Please refresh and try again."));
+    }
+
+    // Safety net for FK violations we didn't anticipate (e.g. a future
+    // referencing table added without matching cleanup in its controller) —
+    // surfaces as a real 409 instead of falling through to the generic 500
+    // below, which used to hide the actual cause from the client entirely.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.error("Data integrity violation", ex);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("message", "This record is still referenced by other data and can't be deleted."));
     }
 
     // Re-throw so Spring Security's AccessDeniedHandler returns the correct 403.

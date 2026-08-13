@@ -14,6 +14,7 @@ public interface DoctorServicePriceRepository extends JpaRepository<DoctorServic
     List<DoctorServicePrice> findByPsychologistId(Long psychologistId);
     Optional<DoctorServicePrice> findByPsychologistIdAndClinicServiceId(Long psychologistId, Long clinicServiceId);
     void deleteByPsychologistId(Long psychologistId);
+    void deleteByClinicServiceId(Long clinicServiceId);
 
     // One-time, idempotent backfill from the pre-mode `price`/`offered`
     // columns — ddl-auto=update never drops them, they're just unmapped
