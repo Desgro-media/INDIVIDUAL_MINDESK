@@ -1,5 +1,6 @@
 package com.patientbook.service;
 
+import com.patientbook.dto.AdminSetPasswordResponse;
 import com.patientbook.dto.PaymentHistoryEntryDto;
 import com.patientbook.dto.PaymentSubmissionReviewDto;
 import com.patientbook.dto.SubscriptionOverrideRequest;
@@ -16,10 +17,12 @@ import com.patientbook.repository.PaymentSubmissionRepository;
 import com.patientbook.repository.SubscriptionRepository;
 import com.patientbook.security.Roles;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -42,9 +45,12 @@ public class SuperAdminService {
     private final AdminAuditLogRepository adminAuditLogRepository;
     private final SubscriptionService subscriptionService;
     private final NotificationService notificationService;
+    private final PasswordEncoder passwordEncoder;
 
     private static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd MMM yyyy");
     private static final DateTimeFormatter AUDIT_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // Sanity bounds on manual date entry — wide enough never to block a real
     // billing arrangement, tight enough to catch a mistyped year.
@@ -214,6 +220,75 @@ public class SuperAdminService {
         audit(adminId, "MANUAL_OVERRIDE_" + request.getAction(), tenantId, detail);
 
         return toSummary(tenant);
+    }
+
+    // ── Password rescue ───────────────────────────────────────────────────
+
+    // Last resort for a tenant (individual practitioner or clinic owner) who
+    // can't sign in. There is no self-service reset in this product and no
+    // email dependency — the admin issues a new password here and passes it to
+    // the client over whatever channel they're already talking on.
+    //
+    // This SETS a password; it cannot reveal the existing one. AppUser.password
+    // is a bcrypt hash with a per-row salt, which is one-way by construction —
+    // no code path, privilege level, or database access can turn it back into
+    // the original text. That's the property that makes a breach of this table
+    // survivable, so it is not a limitation to engineer around.
+    //
+    // Scoped to tenant ROOTS only, matching listTenants(): a clinic's staff are
+    // recovered by their own clinic admin (StaffService.updateCredentials), so
+    // the superadmin never needs to reach past a tenant boundary to fix a login.
+    @Transactional
+    public AdminSetPasswordResponse resetTenantPassword(Long tenantId, Long adminId, String requestedPassword) {
+        AppUser tenant = appUserRepository.findById(tenantId)
+                .filter(u -> Roles.PSYCHOLOGIST.equals(u.getRole()) && u.getTenantId() == null)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
+
+        String password;
+        if (requestedPassword != null && !requestedPassword.isBlank()) {
+            if (requestedPassword.length() < 8) {
+                throw new IllegalArgumentException("Password must be at least 8 characters");
+            }
+            password = requestedPassword;
+        } else {
+            password = generatePassword();
+        }
+
+        tenant.setPassword(passwordEncoder.encode(password));
+        // Signs out every device the tenant was already logged in on. Matters
+        // most in the case this feature exists for: an account someone else may
+        // have gotten into. See AppUser.credentialsChangedAt.
+        LocalDateTime now = LocalDateTime.now();
+        tenant.setCredentialsChangedAt(now);
+        appUserRepository.save(tenant);
+
+        // Records that the rescue happened and who performed it. The password
+        // itself is deliberately NOT in the detail string — an audit trail that
+        // stores working credentials is a liability, not a record.
+        audit(adminId, "RESET_TENANT_PASSWORD", tenantId,
+                "issued a new password for " + tenant.getUsername() + "; existing sessions revoked");
+
+        return AdminSetPasswordResponse.builder()
+                .tenantId(tenant.getId())
+                .name(tenant.getName())
+                .email(tenant.getUsername())
+                .temporaryPassword(password)
+                .changedAt(now)
+                .build();
+    }
+
+    // Read-aloud-safe: no characters that sound or look alike (0/O, 1/l/I),
+    // grouped into blocks so an admin can dictate it over a phone call without
+    // the client mistyping it. ~62 bits of entropy, which is far beyond what a
+    // password meant to be changed within the hour needs.
+    private String generatePassword() {
+        final String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+        StringBuilder sb = new StringBuilder(14);
+        for (int i = 0; i < 12; i++) {
+            if (i > 0 && i % 4 == 0) sb.append('-');
+            sb.append(alphabet.charAt(SECURE_RANDOM.nextInt(alphabet.length())));
+        }
+        return sb.toString();
     }
 
     // A resolved paid window, already normalized to its time-of-day bounds.

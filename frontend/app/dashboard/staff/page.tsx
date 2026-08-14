@@ -6,11 +6,11 @@ import {
   Plus, Pencil, X, Loader2, Check, UserCog,
   ShieldCheck, ShieldOff, RefreshCw, Brain, UserCheck,
   User, Lock, Mail, AlertCircle, CheckCircle2, LogIn, LogOut,
-  CalendarClock, DollarSign, AlertTriangle, Camera,
+  CalendarClock, DollarSign, AlertTriangle, Camera, KeyRound,
 } from "lucide-react";
 import { SpotlightDiv } from "../../../components/Spotlight";
 import {
-  getAllStaff, createStaff, updateStaff, updatePermissions,
+  getAllStaff, createStaff, updateStaff, updatePermissions, updateStaffCredentials,
   deactivateStaff, reactivateStaff, getAllAttendance, getActiveStaff,
   StaffMember, AttendanceRecord, CreateStaffPayload,
 } from "../../../lib/staffApi";
@@ -147,6 +147,10 @@ export default function StaffPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [savingPermsFor, setSavingPermsFor] = useState<number | null>(null);
   const [scheduleModalFor, setScheduleModalFor] = useState<StaffMember | null>(null);
+  // Staff have no self-service password reset (their logins belong to this
+  // clinic), so this modal is the only place their email/password ever
+  // changes. There is no self-service reset anywhere in the product.
+  const [credentialsFor, setCredentialsFor] = useState<StaffMember | null>(null);
   const [scheduleTab, setScheduleTab] = useState<"services" | "availability">("services");
   // Whether each enabled psychologist has at least one priced/offered
   // service — a clinic staff doctor starts with zero (unlike solo
@@ -324,6 +328,7 @@ export default function StaffPage() {
                     onTogglePermission={key => handleTogglePermission(m, key)}
                     onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
                     onManageSchedule={() => { setScheduleModalFor(m); setScheduleTab("services"); }}
+                    onManageCredentials={() => setCredentialsFor(m)}
                     onRefresh={fetchStaff} flash={flash} />
                 ))}
               </div>
@@ -339,6 +344,7 @@ export default function StaffPage() {
                   <StaffCard key={m.id} member={m} savingPerms={savingPermsFor === m.id}
                     onTogglePermission={key => handleTogglePermission(m, key)}
                     onDeactivate={() => handleDeactivate(m)} onReactivate={() => handleReactivate(m)}
+                    onManageCredentials={() => setCredentialsFor(m)}
                     onRefresh={fetchStaff} flash={flash} />
                 ))}
               </div>
@@ -486,6 +492,12 @@ export default function StaffPage() {
         document.body
       )}
 
+      {credentialsFor && typeof document !== "undefined" && createPortal(
+        <CredentialsModal member={credentialsFor} onClose={() => setCredentialsFor(null)}
+          onSaved={fetchStaff} flash={flash} />,
+        document.body
+      )}
+
       {scheduleModalFor && typeof document !== "undefined" && createPortal(
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }} onClick={() => { setScheduleModalFor(null); refreshServicesConfigured(staff); }} />
@@ -541,7 +553,7 @@ export default function StaffPage() {
 }
 
 // ── Staff card ────────────────────────────────────────────────────────────
-function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermission, onDeactivate, onReactivate, onManageSchedule, onRefresh, flash }: {
+function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermission, onDeactivate, onReactivate, onManageSchedule, onManageCredentials, onRefresh, flash }: {
   member: StaffMember;
   savingPerms: boolean;
   hasServicesConfigured?: boolean;
@@ -549,6 +561,7 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
   onDeactivate: () => void;
   onReactivate: () => void;
   onManageSchedule?: () => void;
+  onManageCredentials: () => void;
   onRefresh: () => void;
   flash: (text: string, isError?: boolean) => void;
 }) {
@@ -667,6 +680,9 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
             <button onClick={openEdit} className="icon-btn" title="Edit name, role & job title">
               <Pencil style={{ width: 14, height: 14 }} />
             </button>
+            <button onClick={onManageCredentials} className="icon-btn" title="Change login email & password">
+              <KeyRound style={{ width: 14, height: 14 }} />
+            </button>
             {member.enabled ? (
               <button onClick={onDeactivate} className="icon-btn" title="Deactivate" style={{ color: "var(--danger)" }}>
                 <ShieldOff style={{ width: 14, height: 14 }} />
@@ -707,6 +723,125 @@ function StaffCard({ member, savingPerms, hasServicesConfigured, onTogglePermiss
         </div>
       </div>
     </SpotlightDiv>
+  );
+}
+
+// ── Login details ─────────────────────────────────────────────────────────
+// A clinic staff member can't reset their own password — their account belongs
+// to the clinic. This modal is the replacement for a self-service reset:
+// the admin sets the new email and/or password directly and passes it on.
+function CredentialsModal({ member, onClose, onSaved, flash }: {
+  member: StaffMember;
+  onClose: () => void;
+  onSaved: () => void;
+  flash: (text: string, isError?: boolean) => void;
+}) {
+  const [email, setEmail] = useState(member.username);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Both halves are independent: leaving the password blank keeps the current
+  // one, and leaving the email untouched keeps that. Matches what the endpoint
+  // does with omitted fields — see updateStaffCredentials.
+  const nextEmail = email.trim().toLowerCase();
+  const emailChanged = nextEmail !== member.username.toLowerCase();
+  const settingPassword = password.length > 0;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!emailChanged && !settingPassword) {
+      setError("Change the login email or set a new password first.");
+      return;
+    }
+    if (settingPassword) {
+      if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+      if (password !== confirm) { setError("Passwords don't match."); return; }
+    }
+
+    setSaving(true);
+    try {
+      await updateStaffCredentials(member.id, {
+        ...(emailChanged ? { username: nextEmail } : {}),
+        ...(settingPassword ? { password } : {}),
+      });
+      flash(`Login details updated for ${member.name}.`);
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.message || "Failed to update login details.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="overlay-enter" style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)", backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }} onClick={onClose} />
+      <div className="soft-card anim-scale-in" style={{ position: "relative", width: "100%", maxWidth: 460, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--card-border)" }}>
+          <div>
+            <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-1)" }}>Login Details</h2>
+            <p style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>{member.name}</p>
+          </div>
+          <button onClick={onClose} className="icon-btn" style={{ width: 34, height: 34, borderRadius: "50%" }}>
+            <X style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
+          {error && (
+            <div className="soft-card-2" style={{ borderRadius: 12, padding: "10px 14px", color: "var(--danger)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertCircle style={{ width: 14, height: 14, flexShrink: 0 }} /> {error}
+            </div>
+          )}
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>Login Email</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2" style={{ width: 14, height: 14, color: "var(--text-3)" }} />
+              <input type="email" className="nm-input" style={{ paddingLeft: 38 }} placeholder="staff@example.com"
+                value={email} onChange={e => setEmail(e.target.value)} disabled={saving} required />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>
+              New Password <span style={{ textTransform: "none", fontWeight: 400 }}>— leave blank to keep the current one</span>
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2" style={{ width: 14, height: 14, color: "var(--text-3)" }} />
+              <input type="password" className="nm-input" style={{ paddingLeft: 38 }} placeholder="At least 8 characters"
+                value={password} onChange={e => setPassword(e.target.value)} disabled={saving} autoComplete="new-password" />
+            </div>
+          </div>
+
+          {settingPassword && (
+            <div className="anim-fade-in">
+              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 8 }}>Confirm Password</label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2" style={{ width: 14, height: 14, color: "var(--text-3)" }} />
+                <input type="password" className="nm-input" style={{ paddingLeft: 38 }} placeholder="Re-enter the new password"
+                  value={confirm} onChange={e => setConfirm(e.target.value)} disabled={saving} autoComplete="new-password" />
+              </div>
+            </div>
+          )}
+
+          <div className="soft-card-2" style={{ borderRadius: 12, padding: "12px 14px", fontSize: 11, color: "var(--text-3)", lineHeight: 1.6 }}>
+            {member.name.split(" ")[0]} will be signed out of any devices they&apos;re currently using, and we&apos;ll
+            email {emailChanged ? <strong style={{ color: "var(--text-2)" }}>{nextEmail || "their new address"}</strong> : "them"} to let them know.
+            Share the new password with them directly — it&apos;s never shown again here.
+          </div>
+
+          <button type="submit" disabled={saving || (!emailChanged && !settingPassword)} className="btn-nm-accent" style={{ width: "100%", padding: "12px 0" }}>
+            {saving ? <Loader2 style={{ width: 14, height: 14, animation: "spinSlow 1s linear infinite" }} /> : <KeyRound style={{ width: 14, height: 14 }} />}
+            Update Login Details
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 

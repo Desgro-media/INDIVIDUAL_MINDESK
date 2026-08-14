@@ -51,6 +51,14 @@ export const updateStaff = (id: number, payload: UpdateStaffPayload) =>
 export const updatePermissions = (id: number, permissions: string[]) =>
     api.put<StaffMember>(`/staff/${id}/permissions`, permissions).then(r => r.data);
 
+// Sign-in details. Send only the field being changed — an omitted/blank one is
+// left alone server-side, so setting a new password can't silently rewrite the
+// login email. This is the only way a staff password is ever changed: staff
+// have no self-service reset — nobody in this product does.
+// Both changes sign the staff member out of any devices they're logged in on.
+export const updateStaffCredentials = (id: number, payload: { username?: string; password?: string }) =>
+    api.patch<StaffMember>(`/staff/${id}/credentials`, payload).then(r => r.data);
+
 // "Delete" deactivates — see StaffService.deactivateStaff. Blocks login and
 // public bookability without losing historical appointment/invoice/note
 // attribution.

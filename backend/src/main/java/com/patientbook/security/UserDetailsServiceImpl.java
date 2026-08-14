@@ -4,7 +4,6 @@ import com.patientbook.entity.AppUser;
 import com.patientbook.repository.AppUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -28,12 +27,16 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         // throws DisabledException (handled by GlobalExceptionHandler) for a
         // deactivated staff member, rather than us needing a bespoke check
         // somewhere after authentication.
-        return new User(
+        //
+        // AppUserDetails (a plain User subclass) additionally carries
+        // credentialsChangedAt so JwtAuthenticationFilter can reject tokens
+        // issued before a password reset without a second query.
+        return new AppUserDetails(
                 appUser.getUsername(),
                 appUser.getPassword(),
                 appUser.isEnabled(),
-                true, true, true,
-                Collections.singletonList(new SimpleGrantedAuthority(appUser.getRole()))
+                Collections.singletonList(new SimpleGrantedAuthority(appUser.getRole())),
+                appUser.getCredentialsChangedAt()
         );
     }
 }

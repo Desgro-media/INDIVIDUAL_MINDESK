@@ -67,7 +67,18 @@ services:
       APP_BASE_URL: "http://localhost:3001"
       # Optional integrations — leave blank to run without them; the app
       # boots and the core booking/dashboard flows work either way.
-      RESEND_API_KEY: ""
+      #
+      # Resend is read from the git-ignored .env next to this file (same
+      # mechanism as SUPERADMIN_* above) rather than hardcoded empty. It used
+      # to be a literal "", which silently won out over anything set in .env —
+      # so setting a key there appeared to do nothing and every email failed
+      # with a 401. Without a key the app still boots; password-reset links
+      # then fall back to the backend log (see NotificationService).
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      # Sender address. The default (onboarding@resend.dev) only delivers to
+      # the address the Resend account was registered with — set this to an
+      # address on a domain verified in Resend before sending to real clients.
+      RESEND_FROM_EMAIL: "${RESEND_FROM_EMAIL:-onboarding@resend.dev}"
       MAIL_USERNAME: ""
       MAIL_PASSWORD: ""
       TWILIO_ACCOUNT_SID: ""
