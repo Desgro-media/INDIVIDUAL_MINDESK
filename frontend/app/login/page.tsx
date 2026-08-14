@@ -35,10 +35,20 @@ function LoginForm() {
     // machine. Confirm it against the server before skipping the login form.
     api.get("/auth/me")
       .then((res) => {
+        // A platform-admin session is ignored here, not resumed. This page is
+        // the client entry point; the admin console lives at its own unlisted
+        // URL and nothing public may hint at it — including by silently
+        // redirecting someone there. Falling through shows the normal client
+        // form, which is exactly what an admin who wants to sign in as a
+        // client needs, and reveals nothing to anyone else.
+        if (res.data.role === "ROLE_SUPERADMIN") {
+          setCheckingSession(false);
+          return;
+        }
         // Mirror the confirmed token into the middleware cookie first,
         // otherwise the /dashboard redirect bounces straight back here.
         syncSessionCookie();
-        router.replace(res.data.role === "ROLE_SUPERADMIN" ? "/superadmin/dashboard" : "/dashboard");
+        router.replace("/dashboard");
       })
       .catch(() => {
         clearSession();
@@ -57,6 +67,16 @@ function LoginForm() {
 
     try {
       const res = await api.post("/auth/login", { email, password });
+      // Platform-admin credentials do not sign in here, even when correct.
+      // This form is the client entry point and must not become a second door
+      // into the admin console — that console is reachable only by typing its
+      // own URL, and routing to it from here would advertise it. No session is
+      // stored, so nothing about this attempt carries over.
+      if (res.data.role === "ROLE_SUPERADMIN") {
+        setError("This account can't sign in here.");
+        setLoading(false);
+        return;
+      }
       storeSession(res.data.token, {
         id: res.data.id,
         username: res.data.username,
@@ -67,10 +87,7 @@ function LoginForm() {
         tenantId: res.data.tenantId,
         permissions: res.data.permissions,
       });
-      // This form is the practitioner entry point — a superadmin account
-      // (there's only ever one, seeded server-side) still routes correctly
-      // if it ends up here instead of /superadmin/login.
-      router.push(res.data.role === "ROLE_SUPERADMIN" ? "/superadmin/dashboard" : "/dashboard");
+      router.push("/dashboard");
     } catch (err) {
       setError("Invalid email or password");
       setLoading(false);

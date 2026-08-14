@@ -39,6 +39,7 @@ public class StaffService {
     private final AppUserRepository appUserRepository;
     private final StaffAttendanceService staffAttendanceService;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
 
     public List<StaffSummaryDto> listStaff(AppUser caller) {
         requireClinicOwner(caller);
@@ -111,6 +112,10 @@ public class StaffService {
         if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
             if (dto.getPassword().length() < 8) throw new IllegalArgumentException("Password must be at least 8 characters");
             staff.setPassword(passwordEncoder.encode(dto.getPassword()));
+            // Kept in step with updateCredentials (the surface the dashboard
+            // actually uses) so a password changed through either route ends
+            // the staff member's existing sessions, not just one of them.
+            staff.setCredentialsChangedAt(java.time.LocalDateTime.now());
         }
         // Same rule as createStaff — a role change away from PSYCHOLOGIST
         // (or a bookable=true sent for a non-PSYCHOLOGIST row) can never
@@ -120,6 +125,71 @@ public class StaffService {
         }
 
         return toSummary(appUserRepository.save(staff));
+    }
+
+    // Sign-in details, kept off updateStaff deliberately. A clinic admin
+    // editing a staff member's name or role should not be one stray field away
+    // from silently rewriting their login, and this is the surface a staff
+    // member gets instead of self-service password reset, which this product
+    // does not have: a locked-out staff member is recovered here by their own
+    // clinic admin, and a locked-out tenant by the superadmin (see
+    // SuperAdminService.resetTenantPassword).
+    //
+    // Both fields are independently optional; a blank/absent one is left
+    // untouched (see StaffCredentialsRequest).
+    @Transactional
+    public StaffSummaryDto updateCredentials(AppUser caller, Long staffId, String rawUsername, String rawPassword) {
+        requireClinicOwner(caller);
+        AppUser staff = requireOwnedStaff(caller, staffId);
+
+        String username = (rawUsername != null && !rawUsername.isBlank()) ? rawUsername.trim().toLowerCase() : null;
+        String password = (rawPassword != null && !rawPassword.isBlank()) ? rawPassword : null;
+
+        if (username == null && password == null) {
+            throw new IllegalArgumentException("Provide a new email, a new password, or both");
+        }
+
+        boolean emailChanged = false;
+        if (username != null && !username.equals(staff.getUsername())) {
+            // Same rule as createStaff — the shared login form's email field is
+            // type="email", so a non-email username can't be typed there.
+            if (!EMAIL_PATTERN.matcher(username).matches()) {
+                throw new IllegalArgumentException("Username must be a valid email address");
+            }
+            // Usernames are globally unique across every tenant, so this has to
+            // check the whole table, not just this clinic's roster.
+            if (appUserRepository.findByUsername(username).isPresent()) {
+                throw new IllegalArgumentException("An account with this email already exists");
+            }
+            staff.setUsername(username);
+            emailChanged = true;
+        }
+
+        boolean passwordChanged = false;
+        if (password != null) {
+            if (password.length() < 8) {
+                throw new IllegalArgumentException("Password must be at least 8 characters");
+            }
+            staff.setPassword(passwordEncoder.encode(password));
+            passwordChanged = true;
+        }
+
+        if (!emailChanged && !passwordChanged) {
+            return toSummary(staff); // resubmitted the same email — nothing to do
+        }
+
+        // Signs out whatever devices this staff member was already logged in on
+        // — the whole point of an admin changing these is usually that the old
+        // credentials shouldn't work anymore. See AppUser.credentialsChangedAt.
+        staff.setCredentialsChangedAt(java.time.LocalDateTime.now());
+        AppUser saved = appUserRepository.save(staff);
+
+        // To the NEW address on an email change — the old one no longer
+        // identifies the account.
+        notificationService.sendStaffCredentialsChangedEmail(
+                saved.getName(), saved.getUsername(), caller.getName(), emailChanged, passwordChanged);
+
+        return toSummary(saved);
     }
 
     @Transactional

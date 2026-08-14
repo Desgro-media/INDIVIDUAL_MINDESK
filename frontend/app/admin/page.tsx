@@ -3,8 +3,8 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, Mail, Lock, LogIn } from "lucide-react";
-import api from "../../../lib/api";
-import { storeSession, syncSessionCookie, clearSession } from "../../../lib/authSession";
+import api from "../../lib/api";
+import { storeSession, syncSessionCookie, clearSession } from "../../lib/authSession";
 
 // Deliberately not linked from the public site or the regular /login page —
 // the only account that can ever authenticate here is the single seeded
@@ -32,12 +32,18 @@ function SuperAdminLoginForm() {
     api.get("/auth/me")
       .then((res) => {
         if (res.data.role !== "ROLE_SUPERADMIN") {
-          clearSession();
+          // Show the form, but leave their session alone. This used to
+          // clearSession() here, which meant merely opening this URL signed a
+          // practitioner out of their own dashboard — a destructive side
+          // effect of navigation, and an easy one to trigger by accident when
+          // switching between the two consoles. Signing in below replaces the
+          // session anyway; navigating away should cost them nothing.
+          setNotice("You're signed in with a practitioner account. Sign in below with an admin account to continue.");
           setCheckingSession(false);
           return;
         }
         syncSessionCookie();
-        router.replace("/superadmin/dashboard");
+        router.replace("/admin/dashboard");
       })
       .catch(() => {
         clearSession();
@@ -66,7 +72,7 @@ function SuperAdminLoginForm() {
         name: res.data.name,
         role: res.data.role,
       });
-      router.push("/superadmin/dashboard");
+      router.push("/admin/dashboard");
     } catch (err) {
       setError("Invalid email or password");
       setLoading(false);

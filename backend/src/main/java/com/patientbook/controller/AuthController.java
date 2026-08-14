@@ -99,6 +99,12 @@ public class AuthController {
         return ResponseEntity.ok(buildAuthResponse(appUser, jwt));
     }
 
+    // There is deliberately no self-service password reset here. A locked-out
+    // tenant is recovered by the superadmin issuing them a new password (see
+    // SuperAdminService.resetTenantPassword), and a locked-out clinic staff
+    // member by their own clinic admin (StaffService.updateCredentials) —
+    // neither path depends on email delivery working.
+
     // Lets a logged-in tenant root fill in the phone number for accounts
     // created before signup required one — the frontend prompts for this via
     // a post-login modal whenever /auth/me comes back with a blank phone.
