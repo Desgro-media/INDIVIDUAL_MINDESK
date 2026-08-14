@@ -22,6 +22,14 @@ public class JwtUtil {
     private static final String PLACEHOLDER_SECRET = "CHANGE_ME_generate_a_real_256bit_secret_before_deploying";
     private static final int MIN_SECRET_BYTES = 32; // 256 bits, matches HS256's key-size requirement
 
+    // Millisecond-precision issue time, alongside the standard whole-second
+    // "iat". Needed because AppUser.credentialsChangedAt has sub-second
+    // precision: with seconds alone, a token minted in the same second as a
+    // password change is indistinguishable from one minted just before it, and
+    // JwtAuthenticationFilter has to either wrongly keep stale sessions alive
+    // or wrongly kill the session the user just created. Both happened.
+    private static final String IAT_MILLIS = "iatMs";
+
     @Value("${jwt.secret}")
     private String secret;
 
@@ -56,6 +64,22 @@ public class JwtUtil {
         return extractClaim(token, Claims::getExpiration);
     }
 
+    // When this token was minted, to the second — the standard "iat" claim,
+    // which JWT defines in whole seconds.
+    public Date extractIssuedAt(String token) {
+        return extractClaim(token, Claims::getIssuedAt);
+    }
+
+    // Same instant as "iat" but in epoch milliseconds — a non-standard claim
+    // (see IAT_MILLIS) that exists because whole seconds are too coarse to
+    // order a token against a credential change that happened in the same
+    // second. Null for tokens minted before this claim was introduced;
+    // callers must handle that. See JwtAuthenticationFilter.
+    public Long extractIssuedAtMillis(String token) {
+        Object raw = extractClaim(token, claims -> claims.get(IAT_MILLIS));
+        return raw instanceof Number n ? n.longValue() : null;
+    }
+
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
@@ -85,11 +109,15 @@ public class JwtUtil {
     }
 
     private String createToken(Map<String, Object> claims, String subject) {
+        // One timestamp for both claims, so "iat" and IAT_MILLIS can never
+        // disagree about which second this token belongs to.
+        long now = System.currentTimeMillis();
+        claims.put(IAT_MILLIS, now);
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(subject)
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + jwtExpirationInMs))
+                .setIssuedAt(new Date(now))
+                .setExpiration(new Date(now + jwtExpirationInMs))
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }

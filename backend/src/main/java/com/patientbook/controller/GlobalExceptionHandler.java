@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -28,6 +29,34 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleBadInput(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+    }
+
+    // Bean-validation failures on an @Valid @RequestBody — a malformed email
+    // or too-short password on /auth/signup, a bad field on any other DTO.
+    //
+    // Without this, Spring's default body ({"timestamp","status","error","path"})
+    // carries no "message" field at all, so every frontend error path fell
+    // through to its own generic fallback, which routinely blamed the wrong
+    // thing — a client showing "something went wrong" when the real problem
+    // was one field it could have named.
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(GlobalExceptionHandler::describeFieldError)
+                .orElse("Please check the details you entered and try again.");
+        return ResponseEntity.badRequest().body(Map.of("message", message));
+    }
+
+    // Jakarta's built-in messages are sentence fragments starting lowercase
+    // ("must not be blank"), which read as nonsense on their own — those get
+    // the field name prefixed. Messages we wrote ourselves on the annotation
+    // ("Password must be at least 8 characters") already name their subject
+    // and start uppercase, so they're passed through untouched.
+    private static String describeFieldError(org.springframework.validation.FieldError error) {
+        String message = error.getDefaultMessage();
+        if (message == null || message.isBlank()) return error.getField() + " is invalid";
+        return Character.isLowerCase(message.charAt(0)) ? error.getField() + " " + message : message;
     }
 
     @ExceptionHandler(IllegalStateException.class)

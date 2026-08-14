@@ -132,3 +132,36 @@ export const overrideSubscription = async (
     const res = await api.post(`/superadmin/tenants/${tenantId}/subscription`, override);
     return res.data;
 };
+
+// ── Password rescue ───────────────────────────────────────────────────────
+
+export interface IssuedPassword {
+    tenantId: number;
+    name: string;
+    email: string;
+    /**
+     * The new password, in the clear. This is the only moment it exists
+     * outside the client's own head — it is stored as a bcrypt hash and no
+     * endpoint can ever return it again. Show it, let the admin copy it, and
+     * never persist it anywhere on the client.
+     */
+    temporaryPassword: string;
+    changedAt: string;
+}
+
+/**
+ * Issue a locked-out tenant a new password. There is no counterpart that
+ * *reads* an existing password and there cannot be one — stored passwords are
+ * one-way bcrypt hashes. Pass a password to set a specific one, or omit it and
+ * the server generates a strong, read-aloud-friendly one.
+ *
+ * Revokes every session the tenant currently has open.
+ */
+export const resetTenantPassword = async (
+    tenantId: number,
+    password?: string
+): Promise<IssuedPassword> => {
+    const res = await api.post(`/superadmin/tenants/${tenantId}/reset-password`,
+        password ? { password } : {});
+    return res.data;
+};

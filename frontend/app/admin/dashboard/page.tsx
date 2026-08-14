@@ -8,6 +8,7 @@ import {
   X, Search, Ban, Building2, User,
   IndianRupee, ListChecks, Clock, History,
   LayoutDashboard, Repeat, Receipt, ArrowUpRight, CalendarCog,
+  KeyRound, Copy, Check, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import api from "../../../lib/api";
@@ -17,8 +18,8 @@ import { SpotlightDiv } from "../../../components/Spotlight";
 import { useCountUp } from "../../../lib/chartTheme";
 import {
   listTenants, listPendingSubmissions, approveSubmission, rejectSubmission, overrideSubscription,
-  getDashboardStats,
-  TenantSummary, PaymentSubmissionReview, SuperAdminDashboardStats, PeriodPreset,
+  getDashboardStats, resetTenantPassword,
+  TenantSummary, PaymentSubmissionReview, SuperAdminDashboardStats, PeriodPreset, IssuedPassword,
 } from "../../../lib/superAdminApi";
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; label: string }> = {
@@ -101,6 +102,140 @@ function AccountTypeBadge({ accountType, staffCount }: { accountType: 'INDIVIDUA
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Rescue dialog for a client who can't get into their account.
+//
+// It ISSUES a password; it cannot show the one they forgot. Stored passwords
+// are bcrypt hashes with a per-row salt — one-way by construction, so no
+// amount of privilege turns one back into readable text. The copy here says so
+// plainly rather than leaving an admin hunting for a "view password" button
+// that can never exist.
+//
+// The issued password is shown exactly once. It is deliberately not written to
+// component state that survives the dialog, not cached, and not retrievable
+// from any endpoint afterwards.
+function PasswordRescue({ tenant, onClose }: {
+  tenant: TenantSummary;
+  onClose: () => void;
+}) {
+  const [custom, setCustom] = useState("");
+  const [useCustom, setUseCustom] = useState(false);
+  const [issued, setIssued] = useState<IssuedPassword | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleIssue = async () => {
+    if (useCustom && custom.trim().length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
+    setBusy(true);
+    try {
+      setIssued(await resetTenantPassword(tenant.id, useCustom ? custom.trim() : undefined));
+      toast.success("New password issued");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || "Failed to issue a new password");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!issued) return;
+    try {
+      await navigator.clipboard.writeText(issued.temporaryPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy — select the password and copy it manually.");
+    }
+  };
+
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)" }} onClick={onClose} />
+      <div className="soft-card anim-scale-in" style={{ position: "relative", padding: 28, width: 440, maxWidth: "90vw" }}>
+        <button onClick={onClose} className="icon-btn" style={{ position: "absolute", top: 14, right: 14 }}>
+          <X style={{ width: 18, height: 18 }} />
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <KeyRound style={{ width: 18, height: 18, color: "var(--warning)" }} />
+          <h3 style={{ fontSize: 16, fontWeight: 800, color: "var(--text-1)" }}>
+            {issued ? "New Password Issued" : "Issue a New Password"}
+          </h3>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 18 }}>
+          {tenant.name} — {tenant.email}
+        </p>
+
+        {issued ? (
+          <>
+            <div className="soft-card-2" style={{ borderRadius: 14, padding: 18, marginBottom: 16, textAlign: "center" }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+                Give this to {tenant.name.split(" ")[0]}
+              </p>
+              <p style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 22, fontWeight: 700, color: "var(--text-1)", letterSpacing: "0.04em", wordBreak: "break-all", userSelect: "all" }}>
+                {issued.temporaryPassword}
+              </p>
+              <button onClick={handleCopy} className="btn-nm" style={{ marginTop: 14, padding: "8px 18px", fontSize: 12, gap: 6 }}>
+                {copied ? <Check style={{ width: 13, height: 13, color: "var(--success)" }} /> : <Copy style={{ width: 13, height: 13 }} />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "12px 14px", borderRadius: 12, background: "var(--warning-bg)", marginBottom: 16 }}>
+              <AlertTriangle style={{ width: 14, height: 14, color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
+              <p style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+                Shown once — closing this dialog is the last you&apos;ll see of it. Their devices have all been
+                signed out, so they must use this to get back in. Tell them to change it once they&apos;re in.
+              </p>
+            </div>
+
+            <button onClick={onClose} className="btn-nm-accent" style={{ width: "100%", padding: 12 }}>
+              Done
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "12px 14px", borderRadius: 12, background: "var(--sd, rgba(0,0,0,0.03))", marginBottom: 18 }}>
+              <AlertTriangle style={{ width: 14, height: 14, color: "var(--text-3)", flexShrink: 0, marginTop: 2 }} />
+              <p style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.6 }}>
+                Their existing password can&apos;t be looked up — passwords are stored as one-way hashes, so
+                nobody can read them back. This replaces it with a new one and signs them out everywhere.
+              </p>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14, cursor: "pointer" }}>
+              <input type="checkbox" checked={useCustom} onChange={e => setUseCustom(e.target.checked)} />
+              <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>Type a specific password instead of generating one</span>
+            </label>
+
+            {useCustom && (
+              <input
+                className="nm-input no-icon anim-fade-in"
+                type="text"
+                placeholder="At least 8 characters"
+                value={custom}
+                onChange={e => setCustom(e.target.value)}
+                style={{ width: "100%", marginBottom: 16 }}
+                autoFocus
+              />
+            )}
+
+            <button onClick={handleIssue} disabled={busy} className="btn-nm-accent" style={{ width: "100%", padding: 12, gap: 8 }}>
+              {busy
+                ? <RefreshCw style={{ width: 14, height: 14, animation: "spinSlow 1s linear infinite" }} />
+                : <KeyRound style={{ width: 14, height: 14 }} />}
+              {useCustom ? "Set This Password" : "Generate & Issue Password"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
 }
 
 // Editor for a tenant's billing window. Presets are duration shortcuts that
@@ -411,6 +546,10 @@ export default function SuperAdminDashboardPage() {
   const [rejectTarget, setRejectTarget] = useState<PaymentSubmissionReview | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [periodTarget, setPeriodTarget] = useState<TenantSummary | null>(null);
+  // Locked-out-client rescue. Superadmin-only by construction — this whole
+  // page is behind ROLE_SUPERADMIN, and there is no equivalent anywhere in the
+  // tenant dashboard or on the login screen.
+  const [passwordTarget, setPasswordTarget] = useState<TenantSummary | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [barsIn, setBarsIn] = useState(false);
 
@@ -420,14 +559,14 @@ export default function SuperAdminDashboardPage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     const user = localStorage.getItem("user");
-    if (!token || !user) { router.replace("/superadmin/login"); return; }
+    if (!token || !user) { router.replace("/admin"); return; }
     api.get("/auth/me")
       .then(res => {
-        if (res.data.role !== "ROLE_SUPERADMIN") { clearSession(); router.replace("/superadmin/login"); return; }
+        if (res.data.role !== "ROLE_SUPERADMIN") { clearSession(); router.replace("/admin"); return; }
         setAdmin(res.data);
         setChecking(false);
       })
-      .catch(() => { clearSession(); router.replace("/superadmin/login"); });
+      .catch(() => { clearSession(); router.replace("/admin"); });
   }, [router]);
 
   const fetchData = () => {
@@ -449,7 +588,7 @@ export default function SuperAdminDashboardPage() {
     return () => cancelAnimationFrame(raf);
   }, [loading]);
 
-  const handleLogout = () => { clearSession(); router.push("/superadmin/login"); };
+  const handleLogout = () => { clearSession(); router.push("/admin"); };
 
   const handleApprove = async (submissionId: number) => {
     setBusyId(submissionId);
@@ -874,6 +1013,10 @@ export default function SuperAdminDashboardPage() {
                             title="Set billing period (start & end dates)" className="icon-btn" style={{ color: "var(--accent)" }}>
                             <CalendarCog style={{ width: 15, height: 15 }} />
                           </button>
+                          <button disabled={busyId === t.id} onClick={() => setPasswordTarget(t)}
+                            title="Issue a new password (they're locked out)" className="icon-btn" style={{ color: "var(--warning)" }}>
+                            <KeyRound style={{ width: 15, height: 15 }} />
+                          </button>
                           <button disabled={busyId === t.id} onClick={() => handleSuspend(t.id)}
                             title="Suspend access (keeps the dates)" className="icon-btn" style={{ color: "var(--danger)" }}>
                             <Ban style={{ width: 15, height: 15 }} />
@@ -888,6 +1031,14 @@ export default function SuperAdminDashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Password rescue */}
+      {passwordTarget && typeof document !== "undefined" && (
+        <PasswordRescue
+          tenant={passwordTarget}
+          onClose={() => setPasswordTarget(null)}
+        />
+      )}
 
       {/* Billing period editor */}
       {periodTarget && typeof document !== "undefined" && (
