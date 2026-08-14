@@ -2,6 +2,7 @@ package com.patientbook.controller;
 
 import com.patientbook.service.ResourceNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +43,25 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleOptimisticLock(OptimisticLockingFailureException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("message", "This record was just updated elsewhere. Please refresh and try again."));
+    }
+
+    // A FK/unique violation reaching the controller layer means a delete or
+    // write collided with a constraint the code didn't account for. Previously
+    // these fell through to the catch-all below and surfaced as an opaque 500
+    // "An unexpected error occurred" — which is how deleting a priced service
+    // presented for months: the client saw a generic failure with no indication
+    // that per-doctor pricing rows were blocking it (that specific case is now
+    // handled properly in ClinicServiceController.deleteService).
+    //
+    // Still deliberately generic in the response body — the underlying message
+    // carries table, column and constraint names. Logged in full server-side so
+    // the next one of these is diagnosable from the logs alone.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
+        log.error("Data integrity violation", ex);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("message", "This record is still linked to other data and can't be changed. " +
+                        "Please refresh and try again, or contact support if it persists."));
     }
 
     // Re-throw so Spring Security's AccessDeniedHandler returns the correct 403.

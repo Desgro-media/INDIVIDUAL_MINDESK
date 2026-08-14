@@ -3,11 +3,13 @@ package com.patientbook.controller;
 import com.patientbook.dto.ClinicServiceDto;
 import com.patientbook.entity.ClinicService;
 import com.patientbook.repository.ClinicServiceRepository;
+import com.patientbook.repository.DoctorServicePriceRepository;
 import com.patientbook.security.CurrentUserProvider;
 import com.patientbook.service.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,6 +23,7 @@ import java.util.stream.Collectors;
 public class ClinicServiceController {
 
     private final ClinicServiceRepository serviceRepo;
+    private final DoctorServicePriceRepository servicePriceRepo;
     private final CurrentUserProvider currentUserProvider;
 
     @GetMapping
@@ -61,11 +64,26 @@ public class ClinicServiceController {
         return ResponseEntity.ok(toDto(serviceRepo.save(svc)));
     }
 
+    // Deleting the catalog entry must also clear every doctor's per-mode
+    // pricing for it: doctor_service_price holds the only FK to clinic_service
+    // and it has no ON DELETE action, so without this the DELETE is rejected by
+    // Postgres for any service that has ever been priced — which is every
+    // service created or edited through the dashboard (that form always writes
+    // a pricing row, see the services page's handleSave) plus anything a clinic
+    // configured for its staff. Only the untouched signup defaults, which have
+    // no pricing rows, deleted successfully before this.
+    //
+    // Nothing else references the service, so no history is lost — Appointment
+    // records what was booked as a plain sessionType string, not a FK.
+    // @Transactional so the pricing rows and the service go together: a failure
+    // partway can't leave the catalog entry alive with its pricing wiped.
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
+    @Transactional
     public ResponseEntity<Void> deleteService(@PathVariable Long id) {
         ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + id));
+        servicePriceRepo.deleteByClinicServiceId(svc.getId());
         serviceRepo.delete(svc);
         return ResponseEntity.noContent().build();
     }
