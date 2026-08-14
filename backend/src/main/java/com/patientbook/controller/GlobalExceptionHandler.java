@@ -74,23 +74,15 @@ public class GlobalExceptionHandler {
                 .body(Map.of("message", "This record was just updated elsewhere. Please refresh and try again."));
     }
 
-    // A FK/unique violation reaching the controller layer means a delete or
-    // write collided with a constraint the code didn't account for. Previously
-    // these fell through to the catch-all below and surfaced as an opaque 500
-    // "An unexpected error occurred" — which is how deleting a priced service
-    // presented for months: the client saw a generic failure with no indication
-    // that per-doctor pricing rows were blocking it (that specific case is now
-    // handled properly in ClinicServiceController.deleteService).
-    //
-    // Still deliberately generic in the response body — the underlying message
-    // carries table, column and constraint names. Logged in full server-side so
-    // the next one of these is diagnosable from the logs alone.
+    // Safety net for FK violations we didn't anticipate (e.g. a future
+    // referencing table added without matching cleanup in its controller) —
+    // surfaces as a real 409 instead of falling through to the generic 500
+    // below, which used to hide the actual cause from the client entirely.
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
+    public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         log.error("Data integrity violation", ex);
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(Map.of("message", "This record is still linked to other data and can't be changed. " +
-                        "Please refresh and try again, or contact support if it persists."));
+                .body(Map.of("message", "This record is still referenced by other data and can't be deleted."));
     }
 
     // Re-throw so Spring Security's AccessDeniedHandler returns the correct 403.

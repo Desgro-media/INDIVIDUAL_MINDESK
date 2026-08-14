@@ -64,25 +64,15 @@ public class ClinicServiceController {
         return ResponseEntity.ok(toDto(serviceRepo.save(svc)));
     }
 
-    // Deleting the catalog entry must also clear every doctor's per-mode
-    // pricing for it: doctor_service_price holds the only FK to clinic_service
-    // and it has no ON DELETE action, so without this the DELETE is rejected by
-    // Postgres for any service that has ever been priced — which is every
-    // service created or edited through the dashboard (that form always writes
-    // a pricing row, see the services page's handleSave) plus anything a clinic
-    // configured for its staff. Only the untouched signup defaults, which have
-    // no pricing rows, deleted successfully before this.
-    //
-    // Nothing else references the service, so no history is lost — Appointment
-    // records what was booked as a plain sessionType string, not a FK.
-    // @Transactional so the pricing rows and the service go together: a failure
-    // partway can't leave the catalog entry alive with its pricing wiped.
     @DeleteMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     @Transactional
     public ResponseEntity<Void> deleteService(@PathVariable Long id) {
         ClinicService svc = serviceRepo.findByIdAndPsychologistId(id, currentUserProvider.getCurrentTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found: " + id));
+        // Per-doctor pricing rows FK-block the delete once anyone has priced
+        // this service — clear them first. Booking history is unaffected:
+        // Appointment stores the service as free text, not a FK.
         servicePriceRepo.deleteByClinicServiceId(svc.getId());
         serviceRepo.delete(svc);
         return ResponseEntity.noContent().build();
