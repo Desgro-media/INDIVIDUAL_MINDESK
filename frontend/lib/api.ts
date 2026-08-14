@@ -27,23 +27,40 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (typeof window !== 'undefined' && error.response?.status === 401) {
-            const onLogin     = window.location.pathname.startsWith('/login');
-            const isAdminArea = window.location.pathname.startsWith('/dashboard');
-            if (!onLogin && isAdminArea) {
-                const hadToken = !!localStorage.getItem('token');
-                clearSession();
-                window.location.href = hadToken ? '/login?expired=1' : '/login';
-                return new Promise(() => {});
-            }
+        if (typeof window === 'undefined') return Promise.reject(error);
+
+        const path = window.location.pathname;
+        // Two separate gated areas with two separate login screens. The
+        // practitioner dashboard signs back in at /login; the platform-admin
+        // console at /admin. Sending an expired admin to /login would be wrong
+        // twice over — /login refuses admin credentials outright, and the
+        // console's URL is deliberately not advertised from there.
+        const inConsole   = path.startsWith('/admin');
+        const inDashboard = path.startsWith('/dashboard');
+        const loginPath   = inConsole ? '/admin' : '/login';
+        // The login screens themselves must never redirect to themselves —
+        // /auth/me 401ing there is the normal "no valid session" answer, not a
+        // failure. '/admin' is an exact match because it IS the console's
+        // login page, while '/admin/dashboard' is gated content.
+        const onLoginPage = path === '/login' || path === '/admin';
+
+        if (error.response?.status === 401 && !onLoginPage && (inDashboard || inConsole)) {
+            const hadToken = !!localStorage.getItem('token');
+            clearSession();
+            window.location.href = hadToken ? `${loginPath}?expired=1` : loginPath;
+            return new Promise(() => {});
         }
-        if (typeof window !== 'undefined' && error.response?.status === 402) {
-            const onSubscriptionPage = window.location.pathname.startsWith('/dashboard/subscription');
-            if (!onSubscriptionPage) {
-                window.location.href = '/dashboard/subscription?locked=1';
-                return new Promise(() => {});
-            }
+
+        // 402 = valid session, lapsed subscription. Only ever applies to a
+        // tenant: SubscriptionAccessFilter exempts the superadmin, so a
+        // console page can't produce one — and bouncing the console to a
+        // tenant's renew screen would strand it there.
+        if (error.response?.status === 402 && !inConsole
+                && !path.startsWith('/dashboard/subscription')) {
+            window.location.href = '/dashboard/subscription?locked=1';
+            return new Promise(() => {});
         }
+
         return Promise.reject(error);
     }
 );

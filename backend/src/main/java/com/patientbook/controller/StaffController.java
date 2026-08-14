@@ -1,5 +1,6 @@
 package com.patientbook.controller;
 
+import com.patientbook.dto.StaffCredentialsRequest;
 import com.patientbook.dto.StaffDto;
 import com.patientbook.dto.StaffSummaryDto;
 import com.patientbook.security.CurrentUserProvider;
@@ -57,6 +58,18 @@ public class StaffController {
         dto.setName(body.get("name"));
         dto.setRole(body.get("role"));
         return ResponseEntity.ok(staffService.updateStaff(currentUserProvider.getCurrentUser(), id, dto));
+    }
+
+    // Sign-in details (login email and/or password). Separate from
+    // /{id}/details on purpose — see StaffService.updateCredentials. This is
+    // also the only way a clinic staff member's password ever gets changed:
+    // there is no self-service password reset anywhere in this product.
+    @PatchMapping("/{id}/credentials")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<StaffSummaryDto> updateCredentials(@PathVariable Long id,
+                                                             @RequestBody StaffCredentialsRequest request) {
+        return ResponseEntity.ok(staffService.updateCredentials(
+                currentUserProvider.getCurrentUser(), id, request.getUsername(), request.getPassword()));
     }
 
     // "Delete" deactivates (blocks login, hides from public booking) rather

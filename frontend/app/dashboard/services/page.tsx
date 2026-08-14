@@ -200,8 +200,12 @@ export default function ServicesPage() {
       await api.delete(`/services/${id}`);
       flash("Service deleted.");
       fetchAll();
-    } catch {
-      flash("Failed to delete service.", true);
+    } catch (err: any) {
+      // Prefer the server's message — a delete blocked by linked data comes
+      // back as a 409 explaining why, and reporting that verbatim is the whole
+      // point of it. Falling back to a bare "Failed to delete service." is what
+      // left clients with no idea why deleting a priced service did nothing.
+      flash(err?.response?.data?.message || "Failed to delete service.", true);
     }
   };
 

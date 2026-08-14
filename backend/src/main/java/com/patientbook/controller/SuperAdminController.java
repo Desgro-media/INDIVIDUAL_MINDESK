@@ -1,5 +1,7 @@
 package com.patientbook.controller;
 
+import com.patientbook.dto.AdminSetPasswordRequest;
+import com.patientbook.dto.AdminSetPasswordResponse;
 import com.patientbook.dto.PaymentSubmissionReviewDto;
 import com.patientbook.dto.RejectSubmissionRequest;
 import com.patientbook.dto.SubscriptionOverrideRequest;
@@ -49,6 +51,19 @@ public class SuperAdminController {
             @PathVariable Long id,
             @Valid @RequestBody SubscriptionOverrideRequest request) {
         return ResponseEntity.ok(superAdminService.overrideSubscription(id, currentUserProvider.getCurrentUserId(), request));
+    }
+
+    // Password rescue for a locked-out tenant. Issues a new password and
+    // returns it once, in this response only — see SuperAdminService
+    // .resetTenantPassword for why the previous one can't be produced instead.
+    // Audit-logged like every other mutation here.
+    @PostMapping("/tenants/{id}/reset-password")
+    public ResponseEntity<AdminSetPasswordResponse> resetTenantPassword(
+            @PathVariable Long id,
+            @RequestBody(required = false) AdminSetPasswordRequest request) {
+        String requested = request != null ? request.getPassword() : null;
+        return ResponseEntity.ok(superAdminService.resetTenantPassword(
+                id, currentUserProvider.getCurrentUserId(), requested));
     }
 
     @GetMapping("/payment-submissions")

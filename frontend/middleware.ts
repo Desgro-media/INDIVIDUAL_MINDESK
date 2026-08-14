@@ -40,15 +40,20 @@ function decodeRole(token: string): string | null {
 }
 
 export function middleware(request: NextRequest) {
-    // The login form itself is under /superadmin/:path* (so it can live next
-    // to the dashboard route group) but must never be gated, or an
-    // unauthenticated visit would redirect to itself in a loop.
-    if (request.nextUrl.pathname.startsWith("/superadmin/login")) {
+    // /admin itself is the platform-admin login form. It's matched by
+    // "/admin/:path*" below (":path*" matches zero segments too) but must
+    // never be gated, or an unauthenticated visit would redirect to itself in
+    // a loop. Exact-match, so /admin/dashboard is still gated normally.
+    if (request.nextUrl.pathname === "/admin") {
         return NextResponse.next();
     }
 
-    const isSuperAdminArea = request.nextUrl.pathname.startsWith("/superadmin");
-    const loginPath = isSuperAdminArea ? "/superadmin/login" : "/login";
+    // The platform-admin console lives at an unlisted URL — nothing in the
+    // marketing site, the client login, or the practitioner dashboard links
+    // to it, and /login deliberately never routes here (see app/login).
+    // You reach it only by typing /admin.
+    const isSuperAdminArea = request.nextUrl.pathname.startsWith("/admin");
+    const loginPath = isSuperAdminArea ? "/admin" : "/login";
 
     const token = request.cookies.get(AUTH_COOKIE)?.value;
     if (!token || !isTokenUsable(token)) {
@@ -64,7 +69,7 @@ export function middleware(request: NextRequest) {
     // control — every /api/v1/superadmin/** call is independently enforced
     // server-side via hasAuthority('ROLE_SUPERADMIN').
     if (isSuperAdminArea && decodeRole(token) !== "ROLE_SUPERADMIN") {
-        const response = NextResponse.redirect(new URL("/superadmin/login", request.url));
+        const response = NextResponse.redirect(new URL("/admin", request.url));
         response.cookies.delete(AUTH_COOKIE);
         return response;
     }
@@ -73,5 +78,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/dashboard/:path*", "/superadmin/:path*"],
+    matcher: ["/dashboard/:path*", "/admin/:path*"],
 };

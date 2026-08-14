@@ -185,6 +185,30 @@ public class NotificationService {
         sendEmail(email, "Payment Verification Failed", html);
     }
 
+    // ── Account / credential emails (see StaffService) ──
+
+    // Sent when a clinic admin changes a staff member's email and/or password,
+    // so the staff member isn't locked out wondering why their login broke.
+    // Goes to the NEW address on an email change — the old one no longer
+    // identifies the account.
+    @Async
+    public void sendStaffCredentialsChangedEmail(String name, String email, String clinicName,
+                                                  boolean emailChanged, boolean passwordChanged) {
+        String changed = (emailChanged && passwordChanged) ? "login email and password"
+                : emailChanged ? "login email" : "password";
+        String html = buildSimpleEmailHtml(
+            "Your Login Details Changed",
+            name,
+            clinicName + " updated your " + changed + " for Mindesk"
+                + (emailChanged ? ", so sign in with <strong>" + email + "</strong> from now on" : "")
+                + ". Any devices you were signed in on have been signed out. "
+                + "If you weren't expecting this, contact your clinic administrator.",
+            "<a href='" + appBaseUrl + "/login' style='display:inline-block;padding:12px 28px;background:#4f6ef7;color:#fff;border-radius:50px;text-decoration:none;font-weight:600;font-size:14px;'>Sign In</a>",
+            "#4f6ef7"
+        );
+        sendEmail(email, "Your Mindesk login details were updated", html);
+    }
+
     private void sendTelegramIfLinked(String token, String text) {
         appointmentRepository.findByTrackingTokenWithPatient(token).ifPresent(appointment -> {
             String chatId = appointment.getPatient().getTelegramChatId();
@@ -194,7 +218,23 @@ public class NotificationService {
         });
     }
 
+    // Whether outbound email can actually leave this deployment. Blank is the
+    // default in both property files (email is an optional integration), which
+    // is exactly the state a fresh local checkout runs in.
+    private boolean isEmailConfigured() {
+        return resendApiKey != null && !resendApiKey.isBlank();
+    }
+
     private void sendEmail(String toEmail, String subject, String html) {
+        // Email is an optional integration and blank is the default, so a
+        // deployment without a key would otherwise log a stack of misleading
+        // "401 API key is invalid" ERRORs — one per booking, per reminder, per
+        // anything. Skip the doomed round trip and say plainly what's wrong,
+        // once, at the level that matches (nothing is broken; it isn't set up).
+        if (!isEmailConfigured()) {
+            log.info("RESEND_API_KEY not set — skipping email to {} ({})", toEmail, subject);
+            return;
+        }
         try {
             Resend resend = new Resend(resendApiKey);
             CreateEmailOptions options = CreateEmailOptions.builder()

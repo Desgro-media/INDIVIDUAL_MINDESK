@@ -103,6 +103,21 @@ public class AppUser {
     @Builder.Default
     private boolean enabled = true;
 
+    // When this account's email or password was last changed by someone other
+    // than the account holder — the superadmin rescuing a locked-out tenant
+    // (SuperAdminService.resetTenantPassword) or a clinic admin editing a
+    // staff login (StaffService.updateCredentials). Every JWT issued before
+    // this instant stops authenticating immediately (see
+    // JwtAuthenticationFilter), so the change actually ends whatever sessions
+    // were already open instead of leaving them alive for the rest of the
+    // 8-hour token lifetime — which is the whole point when the reason for the
+    // change is that the wrong person may have had access.
+    //
+    // Null on every row that predates this column and on accounts whose
+    // credentials have never been changed — the filter treats null as "no
+    // cutoff," so existing sessions are unaffected.
+    private LocalDateTime credentialsChangedAt;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
