@@ -851,6 +851,17 @@ export default function ClientTimelinePage() {
   }, [metrics]);
 
   // Timeline Filtering & Sorting
+  // Sessions you're allowed to write a note against. The backend puts no
+  // status condition on PATCH /appointments/{id}/notes, so the only ones
+  // worth excluding are the two that aren't a real session to write up: a
+  // cancelled booking and a sales demo call. The previous CONFIRMED-or-
+  // COMPLETED-only rule silently hid every session still awaiting payment,
+  // which is the state most sessions are in right after they're booked.
+  const notableSessions = useMemo(
+    () => appointments.filter(a => a.status !== "CANCELLED" && a.status !== "DEMO_CALL_PENDING"),
+    [appointments]
+  );
+
   const filteredTimeline = useMemo(() => {
     let result = appointments.filter(a => {
       const query = search.toLowerCase();
@@ -1603,10 +1614,11 @@ export default function ClientTimelinePage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Select Session</label>
-                <select 
-                  className="nm-input" 
+                <select
+                  className="nm-input"
                   style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
                   value={noteSessionId}
+                  disabled={notableSessions.length === 0}
                   onChange={e => {
                     const id = Number(e.target.value);
                     setNoteSessionId(id);
@@ -1615,12 +1627,24 @@ export default function ClientTimelinePage() {
                   }}
                 >
                   <option value="">-- Choose a session --</option>
-                  {appointments.filter(a => a.status === "COMPLETED" || a.status === "CONFIRMED").map(a => (
+                  {notableSessions.map(a => (
                     <option key={a.id} value={a.id}>
-                      {a.appointmentDate} - {a.sessionType || "Session"}
+                      {a.appointmentDate} — {a.sessionType || "Session"} ({STATUS_CFG[a.status]?.label ?? a.status})
                     </option>
                   ))}
                 </select>
+
+                {/* A note always attaches to a session, so with nothing to
+                    attach it to the dropdown is empty and Save stays greyed
+                    out forever. Saying why — and which of the two reasons it
+                    is — beats leaving the user clicking a dead control. */}
+                {notableSessions.length === 0 && (
+                  <p style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: "var(--text-3)" }}>
+                    {appointments.length === 0
+                      ? <>This client has no sessions yet. Use <strong style={{ color: "var(--text-2)" }}>Add Session</strong> to record a past session, or <strong style={{ color: "var(--text-2)" }}>Schedule</strong> to book a new one — then you can write a note against it.</>
+                      : <>This client&apos;s only sessions are cancelled, so there&apos;s nothing to write a note against. Add or schedule a session first.</>}
+                  </p>
+                )}
               </div>
 
               <div>
