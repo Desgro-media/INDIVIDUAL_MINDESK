@@ -9,7 +9,11 @@ import api from "../../../lib/api";
 import { SpotlightLink } from "../../../components/Spotlight";
 
 type Patient = {
-  id: number; name: string; email: string; phone: string; riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string;
+  // email/phone are genuinely optional on the server (only name is required
+  // when adding a patient by hand), so they're typed that way here — the old
+  // `string` was a lie the search filter then crashed on.
+  id: number; name: string; email?: string | null; phone?: string | null;
+  riskFlag?: boolean; riskReason?: string; riskFlaggedAt?: string;
   assignedDoctorId?: number | null;
 };
 type Appointment = {
@@ -78,11 +82,17 @@ function PatientsView() {
   }, []);
 
   const filtered = useMemo(() => {
+    // Every field here is optional in practice — a patient added from the
+    // dashboard only needs a name, and public bookings can arrive without an
+    // email. Matching with `?.` rather than assuming a string is what keeps
+    // typing in the search box from throwing on the first patient that's
+    // missing one (which blanked the whole page, not just that card).
+    const q = search.trim().toLowerCase();
     const result = patients.filter(p =>
-      !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.email.toLowerCase().includes(search.toLowerCase()) ||
-      p.phone?.includes(search)
+      !q ||
+      p.name?.toLowerCase().includes(q) ||
+      p.email?.toLowerCase().includes(q) ||
+      p.phone?.toLowerCase().includes(q)
     );
     return result.sort((a, b) => (b.riskFlag ? 1 : 0) - (a.riskFlag ? 1 : 0));
   }, [patients, search]);
@@ -312,7 +322,7 @@ function PatientsView() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
                   <div className="soft-card-2" style={{ borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-2)" }}>
                     <Mail style={{ width: 12, height: 12, color: "var(--accent)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{patient.email}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{patient.email || "—"}</span>
                   </div>
                   <div className="soft-card-2" style={{ borderRadius: 10, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-2)" }}>
                     <Phone style={{ width: 12, height: 12, color: "var(--accent)", flexShrink: 0 }} />

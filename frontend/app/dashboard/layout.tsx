@@ -416,7 +416,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)", letterSpacing: "-0.02em" }}>{pageTitle}</h2>
           </div>
 
-          {!isMobile && (
+          {/* This is a jump-to-patients shortcut for the OTHER dashboard pages:
+              it only acts on submit, by navigating to /dashboard/patients?q=.
+              On the patients list itself that made it dead weight — a second
+              identical "Search patients..." box that looked live but did
+              nothing, because the list seeds its filter from ?q= on mount only
+              and a same-route push doesn't remount it. That page has its own
+              live filter, so hide this one there rather than have two. */}
+          {!isMobile && pathname !== "/dashboard/patients" && (
             <form onSubmit={handleSearchSubmit} className="header-search" style={{ flex: 1, margin: "0 24px" }}>
               <Search style={{ width: 15, height: 15, color: "var(--text-3)", flexShrink: 0 }} />
               <input
