@@ -244,6 +244,9 @@ export default function BookingPage() {
 
   const [returningPatient, setReturningPatient] = useState<boolean>(false);
   const [emailChecking, setEmailChecking] = useState(false);
+  // Guards against re-posting a lead every time the user steps back to
+  // "details" and forward again — captured once per visit to this page.
+  const [leadCaptured, setLeadCaptured] = useState(false);
 
   // ── Clinic practitioner picker (no-op for INDIVIDUAL accounts — staffList
   // stays empty, selectedStaffId stays null, staffId is simply omitted from
@@ -405,10 +408,26 @@ export default function BookingPage() {
   const next = () => {
     if (currentStep === "details") {
       if (!validateStep1()) return;
-      if (form.patientEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.patientEmail)) {
+      const emailValid = !form.patientEmail.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.patientEmail);
+      if (!emailValid) {
         setForm(f => ({ ...f, patientEmail: "" }));
       }
       setError("");
+      // Capture this contact as a lead the moment they finish the details
+      // step — well before they've picked a session or confirmed a slot.
+      // Best-effort and fire-and-forget: a failure here must never block
+      // the booking wizard itself. If they go on to complete the booking,
+      // the backend converts this same lead rather than leaving it dangling
+      // (see AppointmentService.bookAppointmentForOwner).
+      if (!leadCaptured) {
+        setLeadCaptured(true);
+        publicApi.post(`/public/${slug}/leads`, {
+          name: form.patientName,
+          email: emailValid && form.patientEmail.trim() ? form.patientEmail.trim() : undefined,
+          phone: form.patientPhone,
+          notes: form.notes || undefined,
+        }).catch(() => {});
+      }
       // A clinic with more than one bookable practitioner (or none picked
       // yet) sees a picker next; an individual, or a clinic with exactly
       // one bookable person (auto-selected), goes straight to Mode (which

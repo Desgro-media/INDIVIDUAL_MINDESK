@@ -55,6 +55,7 @@ public class StaffPermissionFilter extends OncePerRequestFilter {
     private static final Map<String, String> PREFIX_PERMISSIONS = new LinkedHashMap<>();
     static {
         PREFIX_PERMISSIONS.put("/api/v1/patients", PATIENTS);
+        PREFIX_PERMISSIONS.put("/api/v1/leads", PATIENTS);
         PREFIX_PERMISSIONS.put("/api/v1/notes", PATIENTS);
         PREFIX_PERMISSIONS.put("/api/v1/mood", PATIENTS);
         PREFIX_PERMISSIONS.put("/api/v1/appointments", APPOINTMENTS);
