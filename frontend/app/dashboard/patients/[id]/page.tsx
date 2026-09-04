@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, Calendar, Clock, CheckCircle2,
@@ -21,7 +22,7 @@ import {
 import api from "../../../../lib/api";
 import { CHART, useThemeMode, SeriesTooltip } from "../../../../lib/chartTheme";
 import { SpotlightDiv } from "../../../../components/Spotlight";
-import { getMySlots } from "../../../../lib/profileApi";
+import { getMySlots, getMyServices, DoctorServicePrice } from "../../../../lib/profileApi";
 
 // ── Custom dropdown (dark-mode safe — avoids native <select> OS rendering) ───
 function CalDrop({ label, options, onSelect }: {
@@ -313,6 +314,14 @@ export default function ClientTimelinePage() {
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [schedSaving, setSchedSaving] = useState(false);
 
+  // Per-doctor service pricing, so the Schedule modal only offers services the
+  // selected practitioner has actually priced for the selected mode. Without
+  // this, picking an unpriced service just fails server-side with
+  // "This practitioner does not offer this service ..." (clinic accounts get
+  // no catalogue-fee fallback — see DoctorAvailabilityService.resolveBookablePrice).
+  // Keyed by doctor id; key 0 = the logged-in user ("myself").
+  const [servicePricingByDoctor, setServicePricingByDoctor] = useState<Record<number, DoctorServicePrice[]>>({});
+
   const [pastModalOpen, setPastModalOpen]   = useState(false);
   const [pastDate, setPastDate]             = useState("");
   const [pastTime, setPastTime]             = useState("");
@@ -555,12 +564,47 @@ export default function ClientTimelinePage() {
     }
   };
 
+  // Load the (mode-aware) service pricing for a given practitioner. doctorId
+  // "" means the logged-in user; a numeric id means a clinic staff doctor.
+  // Cached per doctor — key 0 for "myself" — so switching the picker back and
+  // forth doesn't refetch.
+  const fetchServicePricing = (doctorId: string) => {
+    const key = doctorId ? Number(doctorId) : 0;
+    if (servicePricingByDoctor[key]) return;
+    getMyServices(doctorId ? Number(doctorId) : undefined)
+      .then(rows => setServicePricingByDoctor(prev => ({ ...prev, [key]: rows })))
+      .catch(() => setServicePricingByDoctor(prev => ({ ...prev, [key]: [] })));
+  };
+
+  // clinicServiceIds the currently-selected Schedule doctor offers in the
+  // currently-selected mode. null = pricing not loaded yet (show all rather
+  // than an empty list mid-fetch).
+  const offeredSchedServiceIds = useMemo<Set<string> | null>(() => {
+    const rows = servicePricingByDoctor[schedDoctorId ? Number(schedDoctorId) : 0];
+    if (!rows) return null;
+    return new Set(
+      rows
+        .filter(r => (schedMode === "ONLINE" ? r.onlineOffered : r.offlineOffered))
+        .map(r => String(r.clinicServiceId))
+    );
+  }, [servicePricingByDoctor, schedDoctorId, schedMode]);
+
+  // Drop a chosen service the moment it stops being offered — after a mode or
+  // doctor switch, or once a late pricing fetch lands — so a stale selection
+  // can't be submitted into the "does not offer this service" error.
+  useEffect(() => {
+    if (schedType && offeredSchedServiceIds && !offeredSchedServiceIds.has(schedType)) {
+      setSchedType("");
+    }
+  }, [offeredSchedServiceIds, schedType]);
+
   const openScheduleModal = () => {
     setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE"); setSchedDoctorId("");
     setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
     setAvailableSlots([]);
     setScheduleModalOpen(true);
     fetchServices();
+    fetchServicePricing("");
     const defaultAcc = bankAccounts.find(b => b.isDefault) ?? bankAccounts[0] ?? null;
     setSchedBankAccountId(defaultAcc?.id ?? "");
     setSchedBankAccountName(defaultAcc?.accountName ?? "");
@@ -601,9 +645,14 @@ export default function ClientTimelinePage() {
       setSchedDate(""); setSchedTime(""); setSchedType(""); setSchedMode("OFFLINE"); setSchedDoctorId("");
       setSchedPayStatus("AWAITING"); setSchedPayAmount(""); setSchedPayMethod("CASH");
       setSchedBankAccountId(""); setSchedBankAccountName("");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to schedule appointment");
+      // Surface the backend's actual reason (e.g. "This practitioner does not
+      // offer this service in person" when the doctor has no price configured
+      // for this service/mode) instead of a generic failure — mirrors
+      // handleAddPastSession's error handling.
+      const msg = err?.response?.data?.message;
+      alert(msg?.trim() ? msg : "Failed to schedule appointment");
     } finally {
       setSchedSaving(false);
     }
@@ -1682,20 +1731,35 @@ export default function ClientTimelinePage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-              <div>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Session Type</label>
-                <select
-                  className="nm-input"
-                  style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
-                  value={schedType}
-                  onChange={e => setSchedType(e.target.value)}
-                >
-                  <option value="">-- Choose a service --</option>
-                  {services.map(s => (
-                    <option key={s.id} value={s.id.toString()}>{s.name}</option>
-                  ))}
-                </select>
-              </div>
+              {(() => {
+                const schedServices = offeredSchedServiceIds
+                  ? services.filter(s => offeredSchedServiceIds.has(s.id.toString()))
+                  : services;
+                const noneOffered = offeredSchedServiceIds !== null && schedServices.length === 0;
+                return (
+                  <div>
+                    <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 8 }}>Session Type</label>
+                    <select
+                      className="nm-input"
+                      style={{ width: "100%", padding: 12, borderRadius: 14, color: "var(--text-1)" }}
+                      value={schedType}
+                      onChange={e => setSchedType(e.target.value)}
+                      disabled={noneOffered}
+                    >
+                      <option value="">-- Choose a service --</option>
+                      {schedServices.map(s => (
+                        <option key={s.id} value={s.id.toString()}>{s.name}</option>
+                      ))}
+                    </select>
+                    {noneOffered && (
+                      <p style={{ fontSize: 12, color: "var(--warning)", marginTop: 6 }}>
+                        No {schedMode === "ONLINE" ? "online" : "in-person"} services are priced{schedDoctorId ? " for this doctor" : ""} yet.{" "}
+                        <Link href="/dashboard/services" style={{ color: "var(--accent)", fontWeight: 700 }}>Set pricing in Services</Link>.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {staffDoctors.length > 0 && (
                 <div>
@@ -1711,6 +1775,8 @@ export default function ClientTimelinePage() {
                       // Each doctor has their own calendar — re-fetch slots
                       // for whichever one is now selected.
                       if (schedDate) fetchAvailableSlots(schedDate, schedMode, next);
+                      // ...and their own priced service list.
+                      fetchServicePricing(next);
                     }}
                   >
                     <option value="">Myself</option>
