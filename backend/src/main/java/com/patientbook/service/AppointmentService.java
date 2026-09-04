@@ -41,6 +41,7 @@ public class AppointmentService {
     private final ClinicServiceRepository clinicServiceRepository;
     private final StaffResolutionService staffResolutionService;
     private final SubscriptionService subscriptionService;
+    private final LeadService leadService;
 
     @Lazy
     @Autowired
@@ -173,6 +174,13 @@ public class AppointmentService {
                 .build();
 
         appointment = appointmentRepository.save(appointment);
+
+        // 5b. If this contact submitted the public booking form's first step
+        // as a lead, this booking is that lead converting — flip it rather
+        // than leave it dangling. No-op for every other path here (manual
+        // dashboard scheduling, rebooking) that never had a lead to begin
+        // with. See LeadService.convertLead.
+        leadService.convertLead(request.getPatientPhone(), tenantId, patient.getId(), appointment.getId());
 
         // 6. Create invoice — uses per-doctor, per-mode pricing
         InvoiceDto invoice = invoiceService.createInvoiceForAppointment(appointment.getId());

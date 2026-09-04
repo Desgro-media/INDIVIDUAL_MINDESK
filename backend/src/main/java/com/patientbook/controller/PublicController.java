@@ -9,14 +9,18 @@ import com.patientbook.entity.AppUser;
 import com.patientbook.entity.ClinicHoliday;
 import com.patientbook.entity.ClinicService;
 import com.patientbook.entity.ClinicSettings;
+import com.patientbook.entity.Lead;
+import com.patientbook.dto.LeadRequest;
 import com.patientbook.repository.AppUserRepository;
 import com.patientbook.repository.ClinicServiceRepository;
 import com.patientbook.repository.PatientRepository;
 import com.patientbook.service.BankAccountService;
 import com.patientbook.service.DoctorAvailabilityService;
+import com.patientbook.service.LeadService;
 import com.patientbook.service.ResourceNotFoundException;
 import com.patientbook.service.SettingsService;
 import com.patientbook.service.StaffResolutionService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -46,6 +50,7 @@ public class PublicController {
     private final com.patientbook.repository.AppointmentRepository appointmentRepository;
     private final StaffResolutionService staffResolutionService;
     private final com.patientbook.service.SubscriptionService subscriptionService;
+    private final LeadService leadService;
 
     @GetMapping("/info")
     public ResponseEntity<Map<String, Object>> getInfo(@PathVariable String slug) {
@@ -167,6 +172,16 @@ public class PublicController {
         Map<String, Object> result = new HashMap<>();
         result.put("exists", patientRepository.findByPhoneAndPrimaryPsychologistId(phone.trim(), owner.getId()).isPresent());
         return ResponseEntity.ok(result);
+    }
+
+    // Captures a prospective client as soon as they submit the first step of
+    // the booking wizard (name/email/phone/notes) — well before they've
+    // picked a session or confirmed a slot. If they go on to complete the
+    // booking, AppointmentService flips this same row to CONVERTED rather
+    // than leaving it as a dangling duplicate contact.
+    @PostMapping("/leads")
+    public ResponseEntity<Lead> createLead(@PathVariable String slug, @Valid @RequestBody LeadRequest request) {
+        return ResponseEntity.ok(leadService.createLead(slug, request));
     }
 
     private AppUser resolveOwner(String slug) {

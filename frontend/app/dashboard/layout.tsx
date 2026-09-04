@@ -6,7 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard, Calendar, Users, Settings, Sparkles,
   LogOut, Activity, Menu, X, Bell, BarChart, Receipt, Search, ShieldCheck,
-  UserCog,
+  UserCog, Target,
 } from "lucide-react";
 import ThemeToggle from "../../components/ThemeToggle";
 import PhonePromptModal from "../../components/PhonePromptModal";
@@ -272,6 +272,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ...(hasPermission("ANALYTICS") ? [{ label: "Analytics", icon: BarChart, path: "/dashboard/analytics", group: "Workspace" }] : []),
         ...(hasPermission("APPOINTMENTS") ? [{ label: "Appointments", icon: Calendar, path: "/dashboard/appointments", group: "Manage", badge: pendingCount }] : []),
         ...(hasPermission("PATIENTS") ? [{ label: "Patients", icon: Users, path: "/dashboard/patients", group: "Manage" }] : []),
+        ...(hasPermission("PATIENTS") ? [{ label: "Leads", icon: Target, path: "/dashboard/leads", group: "Manage" }] : []),
         ...(hasPermission("BILLING") ? [{ label: "Billing", icon: Receipt, path: "/dashboard/billing", group: "Manage" }] : []),
         // Services (self-pricing) is now owner-managed for clinic staff — see
         // Staff Management's Schedule & Pricing panel — so staff never get
