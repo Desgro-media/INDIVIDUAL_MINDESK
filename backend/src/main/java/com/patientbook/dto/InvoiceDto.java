@@ -22,7 +22,10 @@ public class InvoiceDto {
     private BigDecimal discountAmount; // Doctor's discount (0 if none)
     private BigDecimal finalAmount;    // amount - discountAmount (what patient actually pays)
     private String discountReason;
-    private String status;          // UNPAID, PAID, WAIVED
+    private String status;          // UNPAID, PARTIALLY_PAID, PAID, WAIVED
+    private String paymentHandledBy; // SELF or RECEPTION — see Invoice.paymentHandledBy
+    private BigDecimal amountPaid;   // Sum of the InvoicePayment ledger so far
+    private BigDecimal balanceDue;   // finalAmount - amountPaid (0 once PAID/WAIVED)
     private String paymentMethod;   // CASH, CARD, UPI, INSURANCE, MANUAL_TRANSFER
     private String remark;          // General transaction remark
     private String toAccount;       // Resolved account name: bank account name or "Cash in hand"

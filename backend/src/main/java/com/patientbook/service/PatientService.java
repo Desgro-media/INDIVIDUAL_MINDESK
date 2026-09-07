@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.patientbook.entity.Appointment;
 import com.patientbook.repository.AppointmentRepository;
 import com.patientbook.repository.InvoiceRepository;
+import com.patientbook.repository.InvoicePaymentRepository;
 import com.patientbook.repository.MoodLogRepository;
 import com.patientbook.repository.NotificationLogRepository;
 import com.patientbook.repository.PatientAttachmentRepository;
@@ -24,6 +25,7 @@ public class PatientService {
     private final PatientRepository patientRepository;
     private final AppointmentRepository appointmentRepository;
     private final InvoiceRepository invoiceRepository;
+    private final InvoicePaymentRepository invoicePaymentRepository;
     private final MoodLogRepository moodLogRepository;
     private final SessionNoteRepository sessionNoteRepository;
     private final NotificationLogRepository notificationLogRepository;
@@ -90,6 +92,7 @@ public class PatientService {
             notificationLogRepository.deleteByAppointmentId(appt.getId());
         }
 
+        invoicePaymentRepository.deleteByInvoice_Patient_Id(id);
         invoiceRepository.deleteByPatientId(id);
         moodLogRepository.deleteByPatientId(id);
         sessionNoteRepository.deleteByPatientId(id);

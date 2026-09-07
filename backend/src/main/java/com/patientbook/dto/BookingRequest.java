@@ -55,4 +55,14 @@ public class BookingRequest {
     // before use; never trusted as-is. Null/omitted for individual
     // practitioners and for a clinic's default/first-available booking.
     private Long staffId;
+
+    // Only meaningful for manual (dashboard) scheduling — "RECEPTION" means
+    // the therapist deliberately deferred payment collection to the front
+    // desk instead of the patient paying online. Null/anything else is
+    // treated as "SELF" (today's behavior — payment link sent, patient pays
+    // online). The public booking endpoint never sends this, so online
+    // bookings are completely unaffected. See
+    // AppointmentService.bookAppointmentForOwner.
+    @Size(max = 20)
+    private String paymentHandledBy;
 }

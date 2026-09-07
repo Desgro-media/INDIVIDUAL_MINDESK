@@ -24,6 +24,9 @@ type Invoice = {
   finalAmount: number;
   discountReason?: string;
   status: string;
+  paymentHandledBy?: string; // SELF or RECEPTION
+  amountPaid?: number;
+  balanceDue?: number;
   paymentMethod?: string;
   remark?: string;
   toAccount?: string;
@@ -51,9 +54,10 @@ const PAYMENT_METHODS = [
 ];
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; label: string }> = {
-  UNPAID: { color: "var(--warning)", bg: "var(--warning-bg)", label: "Unpaid" },
-  PAID:   { color: "var(--success)", bg: "var(--success-bg)", label: "Paid"   },
-  WAIVED: { color: "var(--text-2)", bg: "var(--sd)", label: "Waived" },
+  UNPAID:         { color: "var(--warning)", bg: "var(--warning-bg)", label: "Unpaid" },
+  PARTIALLY_PAID: { color: "var(--warning)", bg: "var(--warning-bg)", label: "Partially Paid" },
+  PAID:           { color: "var(--success)", bg: "var(--success-bg)", label: "Paid"   },
+  WAIVED:         { color: "var(--text-2)", bg: "var(--sd)", label: "Waived" },
 };
 
 export default function BillingPage() {
@@ -63,7 +67,7 @@ export default function BillingPage() {
   const [bankAccountName, setBankAccountName] = useState<string>("");
   const [loading, setLoading]         = useState(true);
   const [loadError, setLoadError]     = useState(false);
-  const [filter, setFilter]           = useState<"ALL" | "UNPAID" | "PAID" | "WAIVED">("ALL");
+  const [filter, setFilter]           = useState<"ALL" | "UNPAID" | "PARTIALLY_PAID" | "PAID" | "WAIVED">("ALL");
   const [monthFilter, setMonthFilter] = useState<string | null>(null);
 
   const [payModal, setPayModal]       = useState<Invoice | null>(null);
@@ -174,16 +178,19 @@ export default function BillingPage() {
 
   // Summary cards — server totals for all time; computed client-side when a
   // month is selected so the cards describe exactly the period on screen.
+  // Mirrors InvoiceService.getRevenueSummary: a PARTIALLY_PAID invoice
+  // contributes only what's actually been collected to revenue, and only
+  // its remaining balance to outstanding — never the full invoice twice.
   const displaySummary: RevenueSummary | null = monthFilter
     ? {
         totalRevenue: monthInvoices
-          .filter(inv => inv.status === "PAID")
-          .reduce((s, inv) => s + (inv.finalAmount ?? 0), 0),
+          .filter(inv => inv.status === "PAID" || inv.status === "PARTIALLY_PAID")
+          .reduce((s, inv) => s + (inv.status === "PAID" ? (inv.finalAmount ?? 0) : (inv.amountPaid ?? 0)), 0),
         outstanding: monthInvoices
-          .filter(inv => inv.status === "UNPAID")
-          .reduce((s, inv) => s + (inv.finalAmount ?? inv.amount ?? 0), 0),
+          .filter(inv => inv.status === "UNPAID" || inv.status === "PARTIALLY_PAID")
+          .reduce((s, inv) => s + (inv.balanceDue ?? inv.finalAmount ?? inv.amount ?? 0), 0),
         paidCount: monthInvoices.filter(inv => inv.status === "PAID").length,
-        unpaidCount: monthInvoices.filter(inv => inv.status === "UNPAID").length,
+        unpaidCount: monthInvoices.filter(inv => inv.status === "UNPAID" || inv.status === "PARTIALLY_PAID").length,
         totalInvoices: monthInvoices.length,
       }
     : summary;
@@ -192,13 +199,17 @@ export default function BillingPage() {
     if (!payModal) return;
     setDiscountError("");
 
+    // For a partially-paid invoice, the discount and "amount to collect now"
+    // both apply to what's still outstanding (balanceDue), never the
+    // original full amount — money already collected isn't touched.
+    const remaining = payModal.balanceDue ?? payModal.finalAmount ?? payModal.amount;
     const discountVal = discountInput.trim() === "" ? 0 : parseFloat(discountInput);
     if (isNaN(discountVal) || discountVal < 0) {
       setDiscountError("Discount must be a positive number.");
       return;
     }
-    if (discountVal > payModal.amount) {
-      setDiscountError(`Discount cannot exceed the base fee of ${fmt(payModal.amount)}.`);
+    if (discountVal > remaining) {
+      setDiscountError(`Discount cannot exceed the remaining balance of ${fmt(remaining)}.`);
       return;
     }
 
@@ -216,7 +227,9 @@ export default function BillingPage() {
       setDiscountReason("");
       setRemarkInput("");
       fetchData();
-    } catch (e) {
+    } catch (e: any) {
+      const msg = e?.response?.data?.message;
+      setDiscountError(msg?.trim() ? msg : "Failed to mark invoice as paid.");
       console.error(e);
     } finally {
       setSaving(false);
@@ -314,7 +327,7 @@ export default function BillingPage() {
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, padding: "16px 20px", borderBottom: "1px solid rgba(180,185,210,0.2)", alignItems: "center", flexWrap: "wrap" }}>
           <Filter style={{ width: 16, height: 16, color: "var(--text-3)", marginRight: 8 }} />
-          {(["ALL", "UNPAID", "PAID", "WAIVED"] as const).map(tab => (
+          {(["ALL", "UNPAID", "PARTIALLY_PAID", "PAID", "WAIVED"] as const).map(tab => (
             <button key={tab} onClick={() => setFilter(tab)}
               className={`tab-pill${filter === tab ? " active" : " nm-raised-sm"}`}
               style={{
@@ -324,7 +337,7 @@ export default function BillingPage() {
                 color: filter === tab ? "#fff" : "var(--text-2)",
                 boxShadow: filter === tab ? "0 4px 14px rgba(79,110,247,0.38), inset 0 1px 0 rgba(255,255,255,0.20)" : undefined,
               }}>
-              {tab}
+              {tab === "PARTIALLY_PAID" ? "Partial" : tab}
             </button>
           ))}
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
@@ -397,6 +410,11 @@ export default function BillingPage() {
                             </div>
                           ) : (
                             <span style={{ fontWeight: 700, color: "var(--text-1)" }}>{fmt(inv.amount)}</span>
+                          )}
+                          {inv.status === "PARTIALLY_PAID" && (
+                            <div style={{ fontSize: 11, color: "var(--warning)", marginTop: 2 }}>
+                              {fmt(inv.amountPaid ?? 0)} collected · {fmt(inv.balanceDue ?? 0)} due
+                            </div>
                           )}
                         </td>
 
@@ -501,13 +519,13 @@ export default function BillingPage() {
 
                         {/* Actions */}
                         <td style={{ padding: "14px 16px" }}>
-                          {inv.status === "UNPAID" && (
+                          {(inv.status === "UNPAID" || inv.status === "PARTIALLY_PAID") && (
                             <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
                               <button
                                 onClick={() => { setPayModal(inv); setPayMethod("CASH"); setDiscountInput(""); setDiscountReason(""); setRemarkInput(""); setDiscountError(""); }}
                                 className="btn-nm"
                                 style={{ padding: "6px 12px", fontSize: 11, gap: 4 }}>
-                                <CheckCircle2 style={{ width: 13, height: 13 }} /> Mark Paid
+                                <CheckCircle2 style={{ width: 13, height: 13 }} /> {inv.status === "PARTIALLY_PAID" ? "Settle Rest" : "Mark Paid"}
                               </button>
                               <button
                                 onClick={() => handleWaive(inv)}
@@ -516,7 +534,7 @@ export default function BillingPage() {
                               </button>
                             </div>
                           )}
-                          {inv.status !== "UNPAID" && (
+                          {inv.status !== "UNPAID" && inv.status !== "PARTIALLY_PAID" && (
                             <span style={{ fontSize: 11, color: "var(--text-3)" }}>
                               {inv.paidAt ? fmtDate(inv.paidAt) : "—"}
                             </span>
@@ -596,9 +614,13 @@ export default function BillingPage() {
               style={{ position: "absolute", top: 16, right: 16 }}>
               <X style={{ width: 18, height: 18 }} />
             </button>
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)", marginBottom: 4 }}>Mark as Paid</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: "var(--text-1)", marginBottom: 4 }}>
+              {payModal.status === "PARTIALLY_PAID" ? "Settle Remaining Balance" : "Mark as Paid"}
+            </h3>
             <p style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 24 }}>
-              {payModal.patientName} — Base fee: {fmt(payModal.amount)}
+              {payModal.status === "PARTIALLY_PAID"
+                ? `${payModal.patientName} — ${fmt(payModal.amountPaid ?? 0)} already collected, ${fmt(payModal.balanceDue ?? payModal.amount)} remaining`
+                : `${payModal.patientName} — Base fee: ${fmt(payModal.amount)}`}
             </p>
 
             <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", marginBottom: 12 }}>Payment Method</p>
@@ -661,11 +683,16 @@ export default function BillingPage() {
               </div>
             </div>
             {discountError && <p style={{ fontSize: 12, color: "var(--danger)", marginBottom: 8 }}>{discountError}</p>}
-            {discountInput && !discountError && parseFloat(discountInput) > 0 && parseFloat(discountInput) <= payModal.amount && (
-              <p style={{ fontSize: 12, color: "var(--success)", marginBottom: 16 }}>
-                Patient pays: <strong>{fmt(payModal.amount - parseFloat(discountInput))}</strong>
-              </p>
-            )}
+            {(() => {
+              const remaining = payModal.balanceDue ?? payModal.finalAmount ?? payModal.amount;
+              const discountVal = parseFloat(discountInput);
+              if (!discountInput || discountError || isNaN(discountVal) || discountVal <= 0 || discountVal > remaining) return null;
+              return (
+                <p style={{ fontSize: 12, color: "var(--success)", marginBottom: 16 }}>
+                  Patient pays now: <strong>{fmt(remaining - discountVal)}</strong>
+                </p>
+              );
+            })()}
 
             <button onClick={handleMarkPaid} disabled={saving} className="btn-nm-accent"
               style={{ width: "100%", padding: "14px", marginTop: 8 }}>

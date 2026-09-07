@@ -6,7 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard, Calendar, Users, Settings, Sparkles,
   LogOut, Activity, Menu, X, Bell, BarChart, Receipt, Search, ShieldCheck,
-  UserCog, Target,
+  UserCog, Target, Wallet,
 } from "lucide-react";
 import ThemeToggle from "../../components/ThemeToggle";
 import PhonePromptModal from "../../components/PhonePromptModal";
@@ -274,6 +274,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ...(hasPermission("PATIENTS") ? [{ label: "Patients", icon: Users, path: "/dashboard/patients", group: "Manage" }] : []),
         ...(hasPermission("PATIENTS") ? [{ label: "Leads", icon: Target, path: "/dashboard/leads", group: "Manage" }] : []),
         ...(hasPermission("BILLING") ? [{ label: "Billing", icon: Receipt, path: "/dashboard/billing", group: "Manage" }] : []),
+        // Same gate as Billing — a receptionist granted BILLING sees both;
+        // an owner/therapist checking on the front desk's queue can too.
+        ...(hasPermission("BILLING") ? [{ label: "Pending Payments", icon: Wallet, path: "/dashboard/reception", group: "Manage" }] : []),
         // Services (self-pricing) is now owner-managed for clinic staff — see
         // Staff Management's Schedule & Pricing panel — so staff never get
         // this nav item regardless of permission; only a clinic owner or an
