@@ -51,6 +51,9 @@ public class AppointmentService {
     private com.patientbook.repository.InvoiceRepository invoiceRepository;
 
     @Autowired
+    private com.patientbook.repository.InvoicePaymentRepository invoicePaymentRepository;
+
+    @Autowired
     private NotificationLogRepository notificationLogRepository;
 
     @Autowired
@@ -157,13 +160,23 @@ public class AppointmentService {
         List<Appointment> previousActive = appointmentRepository.findMostRecentActiveByPatientId(patient.getId());
         Long previousAppointmentId = previousActive.isEmpty() ? null : previousActive.get(0).getId();
 
+        // Only meaningful for manual dashboard scheduling — the therapist
+        // explicitly chose "pass to receptionist" instead of the patient
+        // paying online. The public booking endpoint never sets this field,
+        // so bookAppointment (online) is completely unaffected.
+        boolean toReception = "RECEPTION".equals(request.getPaymentHandledBy());
+
         // 5. Build and save the appointment
         Appointment appointment = Appointment.builder()
                 .patient(patient)
                 .appointmentDate(request.getAppointmentDate())
                 .startTime(request.getStartTime())
                 .endTime(newEndTime)
-                .status("AWAITING_PAYMENT")
+                // A walk-in passed to reception is happening regardless of
+                // when the balance gets settled — confirm it immediately and
+                // track the money independently via Invoice.status, rather
+                // than gating confirmation on payment like the self-pay path.
+                .status(toReception ? "CONFIRMED" : "AWAITING_PAYMENT")
                 .trackingToken(trackingToken)
                 .sessionType(request.getSessionType())
                 .mode(mode)
@@ -183,7 +196,8 @@ public class AppointmentService {
         leadService.convertLead(request.getPatientPhone(), tenantId, patient.getId(), appointment.getId());
 
         // 6. Create invoice — uses per-doctor, per-mode pricing
-        InvoiceDto invoice = invoiceService.createInvoiceForAppointment(appointment.getId());
+        InvoiceDto invoice = invoiceService.createInvoiceForAppointment(
+                appointment.getId(), null, toReception ? "RECEPTION" : "SELF");
 
         // Extract data BEFORE transaction ends — prevents lazy-load in async thread
         String patientName  = patient.getName();
@@ -193,10 +207,17 @@ public class AppointmentService {
         String apptTime     = appointment.getStartTime().toString();
         String token        = appointment.getTrackingToken();
 
-        // If the service is free (fee = 0), skip the payment step
-        if (invoice.getAmount() == null || invoice.getAmount().compareTo(BigDecimal.ZERO) == 0) {
-            appointment.setStatus("CONFIRMED");
-            appointment = appointmentRepository.save(appointment);
+        // Free service, or payment explicitly deferred to reception — the
+        // appointment is already confirmed, just notify. Otherwise (fee > 0,
+        // self-pay) it stays AWAITING_PAYMENT until the patient pays online,
+        // so send the payment link instead — sending that link to someone
+        // reception is expected to collect cash from in person would open a
+        // second, unwatched payment channel on the same invoice.
+        if (toReception || invoice.getAmount() == null || invoice.getAmount().compareTo(BigDecimal.ZERO) == 0) {
+            if (!"CONFIRMED".equals(appointment.getStatus())) {
+                appointment.setStatus("CONFIRMED");
+                appointment = appointmentRepository.save(appointment);
+            }
             notificationService.sendBookingApproved(patientName, patientEmail, patientPhone, apptDate, apptTime, token);
         } else {
             notificationService.sendPaymentLink(patientName, patientEmail, patientPhone, apptDate, apptTime, token);
@@ -444,6 +465,7 @@ public class AppointmentService {
         notificationLogRepository.deleteByAppointmentId(id);
         sessionNoteRepository.deleteByAppointmentId(id);
         moodLogRepository.deleteByAppointmentId(id);
+        invoicePaymentRepository.deleteByInvoice_Appointment_Id(id);
         invoiceRepository.deleteByAppointmentId(id);
         appointmentRepository.deleteById(id);
     }

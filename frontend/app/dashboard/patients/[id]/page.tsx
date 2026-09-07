@@ -359,8 +359,11 @@ export default function ClientTimelinePage() {
   const [editSessionForm, setEditSessionForm]   = useState({ appointmentDate: "", startTime: "", sessionType: "", notes: "", mode: "" });
   const [editSessionSaving, setEditSessionSaving] = useState(false);
 
-  // Schedule modal payment state
-  const [schedPayStatus, setSchedPayStatus] = useState<"AWAITING" | "PAID">("AWAITING");
+  // Schedule modal payment state. "RECEPTION" means the therapist is
+  // deliberately deferring collection to the front desk instead of sending
+  // the patient an online payment link — see the receptionist Pending
+  // Payments page (/dashboard/reception).
+  const [schedPayStatus, setSchedPayStatus] = useState<"AWAITING" | "PAID" | "RECEPTION">("AWAITING");
   const [schedPayAmount, setSchedPayAmount] = useState("");
   const [schedPayMethod, setSchedPayMethod] = useState("CASH");
 
@@ -394,7 +397,7 @@ export default function ClientTimelinePage() {
 
   const applyPaymentAfterCreate = async (
     appointmentId: number,
-    payStatus: "AWAITING" | "PAID",
+    payStatus: "AWAITING" | "PAID" | "RECEPTION",
     payAmount: string,
     payMethod: string,
     bankAccId?: number | "",
@@ -637,7 +640,8 @@ export default function ClientTimelinePage() {
         sessionType: schedType,
         mode: schedMode,
         staffId: schedDoctorId ? Number(schedDoctorId) : undefined,
-        notes: ""
+        notes: "",
+        paymentHandledBy: schedPayStatus === "RECEPTION" ? "RECEPTION" : undefined,
       });
       setAppointments(prev => [res.data, ...prev]);
       await applyPaymentAfterCreate(res.data.id, schedPayStatus, schedPayAmount, schedPayMethod, schedBankAccountId, schedBankAccountName);
@@ -1845,13 +1849,19 @@ export default function ClientTimelinePage() {
               <div style={{ borderTop: "1px solid rgba(180,185,210,0.15)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
                 <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Payment</p>
                 <div style={{ display: "flex", gap: 10 }}>
-                  {(["AWAITING", "PAID"] as const).map(s => (
+                  {(["AWAITING", "PAID", "RECEPTION"] as const).map(s => (
                     <button key={s} type="button" onClick={() => setSchedPayStatus(s)}
                       style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1.5px solid ${schedPayStatus === s ? "var(--accent)" : "transparent"}`, background: schedPayStatus === s ? "var(--accent-surface)" : "transparent", color: schedPayStatus === s ? "var(--accent)" : "var(--text-2)", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
-                      {s === "AWAITING" ? "Awaiting Payment" : "Paid"}
+                      {s === "AWAITING" ? "Pay Online" : s === "PAID" ? "Paid" : "Pass to Reception"}
                     </button>
                   ))}
                 </div>
+                {schedPayStatus === "RECEPTION" && (
+                  <p style={{ fontSize: 11, color: "var(--text-3)", margin: 0, lineHeight: 1.5 }}>
+                    The session is confirmed right away. No online payment link is sent — the front desk will collect
+                    payment (in full or in parts) and it&apos;ll show up in their Pending Payments queue.
+                  </p>
+                )}
                 <div>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--text-3)", marginBottom: 6 }}>Amount (₹) — leave blank to use service fee</label>
                   <input type="number" className="nm-input" placeholder="e.g. 800" value={schedPayAmount} onChange={e => setSchedPayAmount(e.target.value)}

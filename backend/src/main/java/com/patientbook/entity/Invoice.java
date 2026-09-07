@@ -44,7 +44,19 @@ public class Invoice {
 
     @Column(nullable = false)
     @Builder.Default
-    private String status = "UNPAID"; // UNPAID, PAID, WAIVED
+    private String status = "UNPAID"; // UNPAID, PARTIALLY_PAID, PAID, WAIVED
+
+    // SELF (default) = patient pays online / therapist settles it directly.
+    // RECEPTION = the therapist deliberately deferred collection to the
+    // front desk at scheduling time (see AppointmentService.bookAppointmentForOwner) —
+    // this is what the receptionist's pending-payments queue filters on.
+    // "default 'SELF'" so ddl-auto=update backfills every pre-existing
+    // invoice instead of leaving it null — same backfill reasoning as
+    // this entity's own `version` column further down, and as
+    // PaymentSubmission.version.
+    @Column(nullable = false, columnDefinition = "varchar(20) default 'SELF'")
+    @Builder.Default
+    private String paymentHandledBy = "SELF";
 
     private String paymentMethod; // CASH, CARD, UPI, INSURANCE, MANUAL_TRANSFER
 
@@ -57,6 +69,15 @@ public class Invoice {
     private String remark; // General transaction remark (e.g. "followup")
 
     private LocalDate paidAt;
+
+    // Optimistic lock: closes a TOCTOU gap where two near-simultaneous
+    // recordPayment() calls on the same invoice (e.g. two receptionists at
+    // the same desk) could both read the same remaining balance before
+    // either commits, letting the balance go negative or double-settle the
+    // invoice. Same pattern/reasoning as PaymentSubmission.version.
+    @Version
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    private Long version;
 
     @CreationTimestamp
     @Column(updatable = false)
